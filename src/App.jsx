@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+
 import { onAuthStateChanged } from "firebase/auth";
 
 import { auth } from "./firebase/config";
@@ -21,14 +22,28 @@ import Settings from "./pages/Settings";
 import Login from "./pages/Login";
 
 export default function App() {
+  // =========================================================
+  // USER
+  // =========================================================
+
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  const [activePage, setActivePage] =
-    useState("dashboard");
+  // =========================================================
+  // ACTIVE PAGE
+  // =========================================================
 
-  const [mobileOpen, setMobileOpen] =
-    useState(false);
+  const [activePage, setActivePage] = useState("dashboard");
+
+  // =========================================================
+  // MOBILE MENU
+  // =========================================================
+
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // =========================================================
+  // DARK MODE
+  // =========================================================
 
   const [darkMode, setDarkMode] = useState(() => {
     const savedTheme = localStorage.getItem(
@@ -39,7 +54,7 @@ export default function App() {
   });
 
   // =========================================================
-  // THEME
+  // APPLY THEME
   // =========================================================
 
   useEffect(() => {
@@ -98,13 +113,6 @@ export default function App() {
   const handlePageChange = (page) => {
     setActivePage(page);
     setMobileOpen(false);
-
-    // Mobile page එක change කරද්දී
-    // page එකේ උඩට යන්න
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
   };
 
   // =========================================================
@@ -145,9 +153,7 @@ export default function App() {
           : "bg-[#f5f5f7] text-black"
       }`}
     >
-      {/* =====================================================
-          SIDEBAR
-      ====================================================== */}
+      {/* SIDEBAR */}
 
       <Sidebar
         activePage={activePage}
@@ -158,117 +164,90 @@ export default function App() {
         darkMode={darkMode}
       />
 
-      {/* =====================================================
-          MAIN
-      ====================================================== */}
+      {/* MAIN */}
 
       <main
         className={`min-h-screen transition-colors duration-300 lg:pl-64 ${
-          darkMode
-            ? "bg-black"
-            : "bg-[#f5f5f7]"
+          darkMode ? "bg-black" : "bg-[#f5f5f7]"
         }`}
       >
-        <div className="mx-auto w-full max-w-[1800px] px-4 pb-28 pt-4 sm:px-6 lg:px-8 lg:pb-8">
-          
-          {/* =================================================
-              MOBILE NAV
-          ================================================== */}
+        <div className="mx-auto w-full max-w-[1800px] px-4 pb-24 pt-4 sm:px-6 lg:px-8 lg:pb-8">
+          {/* MOBILE NAV */}
 
-          <div className="lg:hidden">
+          <div className="mb-5 lg:hidden">
             <MobileNav
               user={user}
               activePage={activePage}
               setActivePage={handlePageChange}
-              onMenuClick={() =>
-                setMobileOpen(true)
-              }
+              onMenuClick={() => setMobileOpen(true)}
+              darkMode={darkMode}
             />
           </div>
 
-          {/* =================================================
-              DASHBOARD
-          ================================================== */}
+          {/* DASHBOARD */}
 
           {activePage === "dashboard" && (
-            <Dashboard user={user} />
+            <Dashboard
+              user={user}
+              setActivePage={handlePageChange}
+            />
           )}
 
-          {/* =================================================
-              FINANCE
-          ================================================== */}
+          {/* FINANCE */}
 
           {activePage === "finance" && (
             <Finance user={user} />
           )}
 
-          {/* =================================================
-              TASKS
-          ================================================== */}
+          {/* TASKS */}
 
           {activePage === "tasks" && (
             <Tasks user={user} />
           )}
 
-          {/* =================================================
-              GOALS
-          ================================================== */}
+          {/* GOALS */}
 
           {activePage === "goals" && (
             <Goals user={user} />
           )}
 
-          {/* =================================================
-              HABITS
-          ================================================== */}
+          {/* HABITS */}
 
           {activePage === "habits" && (
             <Habits user={user} />
           )}
 
-          {/* =================================================
-              FITNESS
-          ================================================== */}
+          {/* FITNESS */}
 
           {activePage === "fitness" && (
             <Fitness user={user} />
           )}
 
-          {/* =================================================
-              CALENDAR
-          ================================================== */}
+          {/* CALENDAR */}
 
           {activePage === "calendar" && (
             <Calendar user={user} />
           )}
 
-          {/* =================================================
-              TRAVEL
-          ================================================== */}
+          {/* TRAVEL */}
 
           {activePage === "travel" && (
             <Travel user={user} />
           )}
 
-          {/* =================================================
-              NOTES
-          ================================================== */}
+          {/* NOTES */}
 
           {activePage === "notes" && (
             <Notes user={user} />
           )}
 
-          {/* =================================================
-              ANALYTICS
-          ================================================== */}
+          {/* ANALYTICS */}
 
           {activePage === "analytics" && (
             <Analytics user={user} />
           )}
 
-          {/* =================================================
-              SETTINGS
-          ================================================== */}
+          {/* SETTINGS */}
 
           {activePage === "settings" && (
             <Settings

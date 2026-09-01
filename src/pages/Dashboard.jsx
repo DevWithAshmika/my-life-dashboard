@@ -17,6 +17,7 @@ import {
   ChevronDown,
   RefreshCw,
   Check,
+  ArrowUpRight,
 } from "lucide-react";
 
 import {
@@ -69,7 +70,14 @@ const CURRENCIES = {
   },
 };
 
-export default function Dashboard({ user }) {
+// ===========================================================
+// MAIN DASHBOARD
+// ===========================================================
+
+export default function Dashboard({
+  user,
+  setActivePage,
+}) {
   // =========================================================
   // DATA
   // =========================================================
@@ -125,10 +133,21 @@ export default function Dashboard({ user }) {
 
   const exchangeCurrencyInfo = useMemo(() => {
     return (
-      CURRENCIES[preferences.exchangeCurrency] ||
-      CURRENCIES.USD
+      CURRENCIES[
+        preferences.exchangeCurrency
+      ] || CURRENCIES.USD
     );
   }, [preferences.exchangeCurrency]);
+
+  // =========================================================
+  // PAGE NAVIGATION
+  // =========================================================
+
+  function goToPage(page) {
+    if (typeof setActivePage === "function") {
+      setActivePage(page);
+    }
+  }
 
   // =========================================================
   // FORMAT MONEY
@@ -400,7 +419,8 @@ export default function Dashboard({ user }) {
 
   const today = new Date();
 
-  const todayString = formatDate(today);
+  const todayString =
+    formatDate(today);
 
   const currentMonth = `${today.getFullYear()}-${String(
     today.getMonth() + 1
@@ -408,8 +428,7 @@ export default function Dashboard({ user }) {
 
   // =========================================================
   // FINANCE
-  // CURRENT MONTH ONLY
-  // Used for monthly analytics and Finance Overview
+  // CURRENT MONTH
   // =========================================================
 
   const financeStats = useMemo(() => {
@@ -450,33 +469,33 @@ export default function Dashboard({ user }) {
 
   // =========================================================
   // TOTAL FINANCE BALANCE
-  // ALL TIME
   // =========================================================
 
-  const totalFinanceBalance = useMemo(() => {
-    let income = 0;
-    let expense = 0;
+  const totalFinanceBalance =
+    useMemo(() => {
+      let income = 0;
+      let expense = 0;
 
-    data.finance.forEach((item) => {
-      const amount = Number(
-        item.amount || 0
-      );
+      data.finance.forEach((item) => {
+        const amount = Number(
+          item.amount || 0
+        );
 
-      if (item.type === "income") {
-        income += amount;
-      }
+        if (item.type === "income") {
+          income += amount;
+        }
 
-      if (item.type === "expense") {
-        expense += amount;
-      }
-    });
+        if (item.type === "expense") {
+          expense += amount;
+        }
+      });
 
-    return {
-      income,
-      expense,
-      balance: income - expense,
-    };
-  }, [data.finance]);
+      return {
+        income,
+        expense,
+        balance: income - expense,
+      };
+    }, [data.finance]);
 
   // =========================================================
   // 7 DAY FINANCE
@@ -537,7 +556,6 @@ export default function Dashboard({ user }) {
 
   // =========================================================
   // MONTHLY EXPENSE
-  // CURRENT MONTH ONLY
   // =========================================================
 
   const monthlyAnalytics =
@@ -808,7 +826,9 @@ export default function Dashboard({ user }) {
   return (
     <div className="min-h-screen text-white">
 
-      {/* HEADER */}
+      {/* =====================================================
+          HEADER
+      ====================================================== */}
 
       <div className="mb-8">
         <p className="mb-1 text-sm text-white/40">
@@ -837,115 +857,188 @@ export default function Dashboard({ user }) {
         </div>
       </div>
 
-      {/* TOP STATS */}
+      {/* =====================================================
+          TOP STATS
+      ====================================================== */}
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
 
+        {/* FINANCE */}
+
         {preferences.showFinance && (
-          <DashboardCard>
-            <CardIcon>
-              <Wallet size={21} />
-            </CardIcon>
+          <button
+            type="button"
+            onClick={() =>
+              goToPage("finance")
+            }
+            className="group w-full text-left"
+          >
+            <DashboardCard>
+              <div className="flex items-start justify-between">
+                <CardIcon>
+                  <Wallet size={21} />
+                </CardIcon>
 
-            <p className="text-base font-medium text-white/45">
-              Total Balance
-            </p>
+                <ArrowUpRight
+                  size={18}
+                  className="text-white/20 transition group-hover:text-white/70"
+                />
+              </div>
 
-            <h2
-              className={`mt-2 text-3xl font-bold ${
-                totalFinanceBalance.balance >= 0
-                  ? "text-emerald-400"
-                  : "text-red-400"
-              }`}
-            >
-              {formatMoney(
-                totalFinanceBalance.balance
-              )}
-            </h2>
+              <p className="text-base font-medium text-white/45">
+                Total Balance
+              </p>
 
-            <div className="mt-3 flex gap-4 text-xs">
-              <span className="text-emerald-400">
-                +{" "}
+              <h2
+                className={`mt-2 text-3xl font-bold ${
+                  totalFinanceBalance.balance >=
+                  0
+                    ? "text-emerald-400"
+                    : "text-red-400"
+                }`}
+              >
                 {formatMoney(
-                  totalFinanceBalance.income
+                  totalFinanceBalance.balance
                 )}
-              </span>
+              </h2>
 
-              <span className="text-red-400">
-                -{" "}
-                {formatMoney(
-                  totalFinanceBalance.expense
-                )}
-              </span>
-            </div>
-          </DashboardCard>
+              <div className="mt-3 flex gap-4 text-xs">
+                <span className="text-emerald-400">
+                  +{" "}
+                  {formatMoney(
+                    totalFinanceBalance.income
+                  )}
+                </span>
+
+                <span className="text-red-400">
+                  -{" "}
+                  {formatMoney(
+                    totalFinanceBalance.expense
+                  )}
+                </span>
+              </div>
+            </DashboardCard>
+          </button>
         )}
+
+        {/* TASKS */}
 
         {preferences.showTasks && (
-          <DashboardCard>
-            <CardIcon>
-              <CheckSquare size={21} />
-            </CardIcon>
+          <button
+            type="button"
+            onClick={() =>
+              goToPage("tasks")
+            }
+            className="group w-full text-left"
+          >
+            <DashboardCard>
+              <div className="flex items-start justify-between">
+                <CardIcon>
+                  <CheckSquare size={21} />
+                </CardIcon>
 
-            <p className="text-base font-medium text-white/45">
-              Tasks pending
-            </p>
+                <ArrowUpRight
+                  size={18}
+                  className="text-white/20 transition group-hover:text-white/70"
+                />
+              </div>
 
-            <h2 className="mt-2 text-3xl font-bold">
-              {taskStats.pending}
-            </h2>
+              <p className="text-base font-medium text-white/45">
+                Tasks pending
+              </p>
 
-            <p className="mt-2 text-sm text-white/30">
-              {taskStats.completed} completed
-            </p>
-          </DashboardCard>
+              <h2 className="mt-2 text-3xl font-bold">
+                {taskStats.pending}
+              </h2>
+
+              <p className="mt-2 text-sm text-white/30">
+                {taskStats.completed} completed
+              </p>
+            </DashboardCard>
+          </button>
         )}
+
+        {/* GOALS */}
 
         {preferences.showGoals && (
-          <DashboardCard>
-            <CardIcon>
-              <Target size={21} />
-            </CardIcon>
+          <button
+            type="button"
+            onClick={() =>
+              goToPage("goals")
+            }
+            className="group w-full text-left"
+          >
+            <DashboardCard>
+              <div className="flex items-start justify-between">
+                <CardIcon>
+                  <Target size={21} />
+                </CardIcon>
 
-            <p className="text-base font-medium text-white/45">
-              Goal progress
-            </p>
+                <ArrowUpRight
+                  size={18}
+                  className="text-white/20 transition group-hover:text-white/70"
+                />
+              </div>
 
-            <h2 className="mt-2 text-3xl font-bold">
-              {goalStats.percentage}%
-            </h2>
+              <p className="text-base font-medium text-white/45">
+                Goal progress
+              </p>
 
-            <ProgressBar
-              percentage={
-                goalStats.percentage
-              }
-            />
-          </DashboardCard>
+              <h2 className="mt-2 text-3xl font-bold">
+                {goalStats.percentage}%
+              </h2>
+
+              <ProgressBar
+                percentage={
+                  goalStats.percentage
+                }
+              />
+            </DashboardCard>
+          </button>
         )}
 
+        {/* HABITS */}
+
         {preferences.showHabits && (
-          <DashboardCard>
-            <CardIcon>
-              <Repeat size={21} />
-            </CardIcon>
+          <button
+            type="button"
+            onClick={() =>
+              goToPage("habits")
+            }
+            className="group w-full text-left"
+          >
+            <DashboardCard>
+              <div className="flex items-start justify-between">
+                <CardIcon>
+                  <Repeat size={21} />
+                </CardIcon>
 
-            <p className="text-base font-medium text-white/45">
-              Habits today
-            </p>
+                <ArrowUpRight
+                  size={18}
+                  className="text-white/20 transition group-hover:text-white/70"
+                />
+              </div>
 
-            <h2 className="mt-2 text-3xl font-bold">
-              {habitStats.completedToday}/
-              {habitStats.total}
-            </h2>
+              <p className="text-base font-medium text-white/45">
+                Habits today
+              </p>
 
-            <p className="mt-2 text-sm text-white/30">
-              {habitStats.percentage}% completed
-            </p>
-          </DashboardCard>
+              <h2 className="mt-2 text-3xl font-bold">
+                {habitStats.completedToday}/
+                {habitStats.total}
+              </h2>
+
+              <p className="mt-2 text-sm text-white/30">
+                {habitStats.percentage}% completed
+              </p>
+            </DashboardCard>
+          </button>
         )}
       </div>
 
-      {/* EXCHANGE RATE */}
+      {/* =====================================================
+          EXCHANGE RATE
+      ====================================================== */}
 
       {preferences.showFinance && (
         <SectionCard className="mb-6">
@@ -1165,7 +1258,9 @@ export default function Dashboard({ user }) {
         </SectionCard>
       )}
 
-      {/* FINANCE + TASKS */}
+      {/* =====================================================
+          FINANCE + TASKS
+      ====================================================== */}
 
       {(preferences.showFinance ||
         preferences.showTasks) && (
@@ -1179,6 +1274,9 @@ export default function Dashboard({ user }) {
                 icon={<Wallet size={20} />}
                 title="Finance Overview"
                 subtitle="This month"
+                action={() =>
+                  goToPage("finance")
+                }
               />
 
               <div className="grid grid-cols-2 gap-3">
@@ -1213,6 +1311,17 @@ export default function Dashboard({ user }) {
 
               </div>
 
+              <button
+                type="button"
+                onClick={() =>
+                  goToPage("finance")
+                }
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-white/[0.05] px-4 py-3 text-sm text-white/50 transition hover:bg-white/[0.09] hover:text-white"
+              >
+                Open Finance
+                <ArrowUpRight size={15} />
+              </button>
+
             </SectionCard>
           )}
 
@@ -1225,6 +1334,9 @@ export default function Dashboard({ user }) {
                 }
                 title="Task Progress"
                 subtitle="Your current task progress"
+                action={() =>
+                  goToPage("tasks")
+                }
               />
 
               <div className="mb-4 h-3 overflow-hidden rounded-full bg-white/10">
@@ -1250,13 +1362,26 @@ export default function Dashboard({ user }) {
 
               </div>
 
+              <button
+                type="button"
+                onClick={() =>
+                  goToPage("tasks")
+                }
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-white/[0.05] px-4 py-3 text-sm text-white/50 transition hover:bg-white/[0.09] hover:text-white"
+              >
+                Open Tasks
+                <ArrowUpRight size={15} />
+              </button>
+
             </SectionCard>
           )}
 
         </div>
       )}
 
-      {/* 7 DAY FINANCE */}
+      {/* =====================================================
+          7 DAY FINANCE
+      ====================================================== */}
 
       {preferences.showFinance && (
         <SectionCard className="mb-6">
@@ -1267,6 +1392,9 @@ export default function Dashboard({ user }) {
             }
             title="7-Day Finance"
             subtitle="Income and expenses for the last 7 days"
+            action={() =>
+              goToPage("finance")
+            }
           />
 
           <div className="h-[300px] w-full">
@@ -1332,7 +1460,9 @@ export default function Dashboard({ user }) {
         </SectionCard>
       )}
 
-      {/* MONTHLY EXPENSE */}
+      {/* =====================================================
+          MONTHLY EXPENSE
+      ====================================================== */}
 
       {preferences.showFinance && (
         <SectionCard className="mb-6">
@@ -1343,6 +1473,9 @@ export default function Dashboard({ user }) {
             }
             title="Monthly Expense Breakdown"
             subtitle="Where your money is going this month"
+            action={() =>
+              goToPage("finance")
+            }
           />
 
           {monthlyAnalytics.length === 0 ? (
@@ -1410,57 +1543,95 @@ export default function Dashboard({ user }) {
         </SectionCard>
       )}
 
-      {/* QUICK OVERVIEW */}
+      {/* =====================================================
+          QUICK OVERVIEW
+      ====================================================== */}
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 
         {preferences.showFitness && (
+          <button
+            type="button"
+            onClick={() =>
+              goToPage("fitness")
+            }
+            className="group text-left"
+          >
+            <QuickCard
+              icon={
+                <Dumbbell size={20} />
+              }
+              title="Workouts"
+              value={
+                fitnessStats.workouts
+              }
+            />
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={() =>
+            goToPage("calendar")
+          }
+          className="group text-left"
+        >
           <QuickCard
             icon={
-              <Dumbbell size={20} />
+              <CalendarDays size={20} />
             }
-            title="Workouts"
+            title="Upcoming Events"
             value={
-              fitnessStats.workouts
+              upcomingEvents.length
             }
           />
-        )}
-
-        <QuickCard
-          icon={
-            <CalendarDays size={20} />
-          }
-          title="Upcoming Events"
-          value={
-            upcomingEvents.length
-          }
-        />
+        </button>
 
         {preferences.showTravel && (
-          <QuickCard
-            icon={<Map size={20} />}
-            title="Trips"
-            value={
-              data.travel.length
+          <button
+            type="button"
+            onClick={() =>
+              goToPage("travel")
             }
-          />
+            className="group text-left"
+          >
+            <QuickCard
+              icon={<Map size={20} />}
+              title="Trips"
+              value={
+                data.travel.length
+              }
+            />
+          </button>
         )}
 
-        <QuickCard
-          icon={
-            <FileText size={20} />
+        <button
+          type="button"
+          onClick={() =>
+            goToPage("notes")
           }
-          title="Notes"
-          value={
-            data.notes.length
-          }
-        />
+          className="group text-left"
+        >
+          <QuickCard
+            icon={
+              <FileText size={20} />
+            }
+            title="Notes"
+            value={
+              data.notes.length
+            }
+          />
+        </button>
 
       </div>
 
-      {/* EVENTS + TRAVEL */}
+      {/* =====================================================
+          EVENTS + TRAVEL
+      ====================================================== */}
 
       <div className="grid gap-5 lg:grid-cols-2">
+
+        {/* EVENTS */}
 
         <SectionCard>
 
@@ -1470,6 +1641,9 @@ export default function Dashboard({ user }) {
             }
             title="Upcoming Events"
             subtitle="From your calendar"
+            action={() =>
+              goToPage("calendar")
+            }
           />
 
           {upcomingEvents.length === 0 ? (
@@ -1483,9 +1657,13 @@ export default function Dashboard({ user }) {
               {upcomingEvents.map(
                 (event) => (
 
-                  <div
+                  <button
                     key={event.id}
-                    className="flex items-center gap-3 rounded-2xl bg-white/[0.04] p-4"
+                    type="button"
+                    onClick={() =>
+                      goToPage("calendar")
+                    }
+                    className="group flex w-full items-center gap-3 rounded-2xl bg-white/[0.04] p-4 text-left transition hover:bg-white/[0.07]"
                   >
 
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10">
@@ -1494,7 +1672,7 @@ export default function Dashboard({ user }) {
 
                     </div>
 
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
 
                       <p className="truncate font-medium">
                         {event.title ||
@@ -1507,7 +1685,12 @@ export default function Dashboard({ user }) {
 
                     </div>
 
-                  </div>
+                    <ArrowUpRight
+                      size={16}
+                      className="shrink-0 text-white/20 transition group-hover:text-white/60"
+                    />
+
+                  </button>
 
                 )
               )}
@@ -1518,6 +1701,8 @@ export default function Dashboard({ user }) {
 
         </SectionCard>
 
+        {/* TRAVEL */}
+
         {preferences.showTravel && (
           <SectionCard>
 
@@ -1525,6 +1710,9 @@ export default function Dashboard({ user }) {
               icon={<Map size={20} />}
               title="Upcoming Travel"
               subtitle="Your next journeys"
+              action={() =>
+                goToPage("travel")
+              }
             />
 
             {upcomingTrips.length === 0 ? (
@@ -1538,9 +1726,13 @@ export default function Dashboard({ user }) {
                 {upcomingTrips.map(
                   (trip) => (
 
-                    <div
+                    <button
                       key={trip.id}
-                      className="rounded-2xl bg-white/[0.04] p-4"
+                      type="button"
+                      onClick={() =>
+                        goToPage("travel")
+                      }
+                      className="group w-full rounded-2xl bg-white/[0.04] p-4 text-left transition hover:bg-white/[0.07]"
                     >
 
                       <div className="flex items-center justify-between gap-3">
@@ -1551,13 +1743,18 @@ export default function Dashboard({ user }) {
                             "Unnamed Trip"}
                         </p>
 
-                        {trip.date && (
-                          <span className="shrink-0 text-xs text-white/30">
-                            {trip.date}
-                          </span>
-                        )}
+                        <ArrowUpRight
+                          size={16}
+                          className="shrink-0 text-white/20 transition group-hover:text-white/60"
+                        />
 
                       </div>
+
+                      {trip.date && (
+                        <span className="mt-1 block text-xs text-white/30">
+                          {trip.date}
+                        </span>
+                      )}
 
                       {trip.notes && (
                         <p className="mt-2 line-clamp-2 text-xs text-white/30">
@@ -1565,7 +1762,7 @@ export default function Dashboard({ user }) {
                         </p>
                       )}
 
-                    </div>
+                    </button>
 
                   )
                 )}
@@ -1579,7 +1776,9 @@ export default function Dashboard({ user }) {
 
       </div>
 
-      {/* NOTES */}
+      {/* =====================================================
+          NOTES
+      ====================================================== */}
 
       <SectionCard className="mt-5">
 
@@ -1589,6 +1788,9 @@ export default function Dashboard({ user }) {
           }
           title="Recent Notes"
           subtitle="Your latest notes"
+          action={() =>
+            goToPage("notes")
+          }
         />
 
         {recentNotes.length === 0 ? (
@@ -1602,15 +1804,28 @@ export default function Dashboard({ user }) {
             {recentNotes.map(
               (note) => (
 
-                <div
+                <button
                   key={note.id}
-                  className="rounded-2xl bg-white/[0.04] p-4"
+                  type="button"
+                  onClick={() =>
+                    goToPage("notes")
+                  }
+                  className="group rounded-2xl bg-white/[0.04] p-4 text-left transition hover:bg-white/[0.07]"
                 >
 
-                  <p className="font-medium">
-                    {note.title ||
-                      "Untitled"}
-                  </p>
+                  <div className="flex items-start justify-between gap-3">
+
+                    <p className="font-medium">
+                      {note.title ||
+                        "Untitled"}
+                    </p>
+
+                    <ArrowUpRight
+                      size={15}
+                      className="shrink-0 text-white/20 transition group-hover:text-white/60"
+                    />
+
+                  </div>
 
                   <p className="mt-2 line-clamp-3 text-sm text-white/30">
                     {note.content ||
@@ -1618,7 +1833,7 @@ export default function Dashboard({ user }) {
                       "No content"}
                   </p>
 
-                </div>
+                </button>
 
               )
             )}
@@ -1629,7 +1844,9 @@ export default function Dashboard({ user }) {
 
       </SectionCard>
 
-      {/* SETTINGS HINT */}
+      {/* =====================================================
+          SETTINGS HINT
+      ====================================================== */}
 
       {!preferences.showFinance &&
         !preferences.showTasks &&
@@ -1691,7 +1908,7 @@ function DashboardCard({
   children,
 }) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-xl shadow-black/10 backdrop-blur-2xl">
+    <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-xl shadow-black/10 backdrop-blur-2xl transition group-hover:border-white/20 group-hover:bg-white/[0.06]">
       {children}
     </div>
   );
@@ -1736,25 +1953,41 @@ function SectionHeader({
   icon,
   title,
   subtitle,
+  action,
 }) {
   return (
-    <div className="mb-6 flex items-center gap-3">
+    <div className="mb-6 flex items-center justify-between gap-3">
 
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white/70">
-        {icon}
+      <div className="flex items-center gap-3">
+
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white/70">
+          {icon}
+        </div>
+
+        <div>
+
+          <h2 className="font-semibold">
+            {title}
+          </h2>
+
+          <p className="mt-1 text-xs text-white/30">
+            {subtitle}
+          </p>
+
+        </div>
+
       </div>
 
-      <div>
-
-        <h2 className="font-semibold">
-          {title}
-        </h2>
-
-        <p className="mt-1 text-xs text-white/30">
-          {subtitle}
-        </p>
-
-      </div>
+      {action && (
+        <button
+          type="button"
+          onClick={action}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/[0.05] text-white/30 transition hover:bg-white/[0.1] hover:text-white"
+          aria-label={`Open ${title}`}
+        >
+          <ArrowUpRight size={16} />
+        </button>
+      )}
 
     </div>
   );
@@ -1829,10 +2062,17 @@ function QuickCard({
   value,
 }) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-xl shadow-black/10 backdrop-blur-2xl">
+    <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-xl shadow-black/10 backdrop-blur-2xl transition group-hover:border-white/20 group-hover:bg-white/[0.06]">
 
-      <div className="mb-4 text-white/40">
+      <div className="mb-4 flex items-center justify-between text-white/40">
+
         {icon}
+
+        <ArrowUpRight
+          size={16}
+          className="text-white/20 transition group-hover:text-white/60"
+        />
+
       </div>
 
       <p className="text-sm text-white/40">
