@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 
 import { signOut } from "firebase/auth";
-
 import { auth } from "../firebase/config";
 
 const navigation = [
@@ -83,6 +82,10 @@ export default function Sidebar({
   mobileOpen = false,
   setMobileOpen,
 }) {
+  // =========================================================
+  // LOGOUT
+  // =========================================================
+
   async function handleLogout() {
     const confirmed = window.confirm(
       "Are you sure you want to logout?"
@@ -98,9 +101,6 @@ export default function Sidebar({
       if (setMobileOpen) {
         setMobileOpen(false);
       }
-
-      // No manual redirect needed.
-      // App.jsx listens to Firebase auth state.
     } catch (error) {
       console.error(
         "Logout error:",
@@ -113,12 +113,21 @@ export default function Sidebar({
     }
   }
 
+  // =========================================================
+  // NAVIGATION
+  // =========================================================
+
   function handleNavigation(id) {
     setActivePage(id);
 
     if (setMobileOpen) {
       setMobileOpen(false);
     }
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   }
 
   return (
@@ -127,15 +136,13 @@ export default function Sidebar({
           DESKTOP SIDEBAR
       ====================================================== */}
 
-      <aside className="fixed left-0 top-0 z-40 hidden h-screen w-64 border-r border-white/10 bg-black/70 p-4 backdrop-blur-2xl lg:block">
-
+      <aside className="fixed left-0 top-0 z-40 hidden h-screen w-64 border-r border-white/10 bg-black/75 p-4 backdrop-blur-2xl lg:block">
         <SidebarContent
           activePage={activePage}
           handleNavigation={handleNavigation}
           user={user}
           handleLogout={handleLogout}
         />
-
       </aside>
 
       {/* =====================================================
@@ -143,46 +150,52 @@ export default function Sidebar({
       ====================================================== */}
 
       {mobileOpen && (
-        <div className="fixed inset-0 z-[60] lg:hidden">
-
-          {/* Overlay */}
+        <div className="fixed inset-0 z-[100] lg:hidden">
+          
+          {/* OVERLAY */}
 
           <button
+            type="button"
             aria-label="Close menu"
             onClick={() =>
               setMobileOpen(false)
             }
-            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            className="absolute inset-0 h-full w-full bg-black/75 backdrop-blur-sm"
           />
 
-          {/* Drawer */}
+          {/* DRAWER */}
 
-          <aside className="relative z-10 h-full w-[290px] max-w-[85vw] border-r border-white/10 bg-black/95 p-4 shadow-2xl backdrop-blur-2xl">
+          <aside className="relative z-10 flex h-full w-[290px] max-w-[85vw] flex-col border-r border-white/10 bg-black/95 p-4 shadow-2xl backdrop-blur-2xl">
+            
+            {/* CLOSE */}
 
-            <div className="mb-4 flex justify-end">
+            <div className="mb-4 flex items-center justify-between">
+              
+              <div className="px-2">
+                <p className="text-xs text-white/30">
+                  MENU
+                </p>
+              </div>
 
               <button
+                type="button"
                 onClick={() =>
                   setMobileOpen(false)
                 }
-                className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.06] text-white/50 hover:bg-white/10 hover:text-white"
+                aria-label="Close menu"
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.06] text-white/50 transition hover:bg-white/10 hover:text-white active:scale-95"
               >
                 <X size={19} />
               </button>
-
             </div>
 
             <SidebarContent
               activePage={activePage}
-              handleNavigation={
-                handleNavigation
-              }
+              handleNavigation={handleNavigation}
               user={user}
               handleLogout={handleLogout}
             />
-
           </aside>
-
         </div>
       )}
     </>
@@ -201,31 +214,26 @@ function SidebarContent({
 }) {
   return (
     <div className="flex h-full flex-col">
-
+      
       {/* =====================================================
           BRAND
       ====================================================== */}
 
-      <div className="mb-8 flex items-center gap-3 px-2">
-
+      <div className="mb-7 flex items-center gap-3 px-2">
+        
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/10">
-
           <LayoutDashboard size={20} />
-
         </div>
 
         <div className="min-w-0">
-
-          <h1 className="truncate text-sm font-bold">
-            My Life
+          <h1 className="truncate text-sm font-bold text-white">
+            My Dashboard
           </h1>
 
-          <p className="text-xs text-white/30">
+          <p className="truncate text-xs text-white/30">
             Personal Dashboard
           </p>
-
         </div>
-
       </div>
 
       {/* =====================================================
@@ -233,9 +241,8 @@ function SidebarContent({
       ====================================================== */}
 
       <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
-
+        
         {navigation.map((item) => {
-
           const Icon = item.icon;
 
           const active =
@@ -244,16 +251,16 @@ function SidebarContent({
           return (
             <button
               key={item.id}
+              type="button"
               onClick={() =>
                 handleNavigation(item.id)
               }
-              className={`group flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm transition ${
+              className={`group flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm transition-all duration-200 ${
                 active
                   ? "bg-white text-black shadow-lg"
                   : "text-white/45 hover:bg-white/[0.06] hover:text-white"
               }`}
             >
-
               <Icon
                 size={18}
                 className={
@@ -264,11 +271,9 @@ function SidebarContent({
               />
 
               <span>{item.label}</span>
-
             </button>
           );
         })}
-
       </nav>
 
       {/* =====================================================
@@ -276,9 +281,9 @@ function SidebarContent({
       ====================================================== */}
 
       <div className="mt-4 border-t border-white/10 pt-4">
-
+        
         <div className="mb-3 flex items-center gap-3 rounded-2xl bg-white/[0.04] p-3">
-
+          
           {user?.photoURL ? (
             <img
               src={user.photoURL}
@@ -286,7 +291,7 @@ function SidebarContent({
               className="h-10 w-10 shrink-0 rounded-xl object-cover"
             />
           ) : (
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-sm font-semibold">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-sm font-semibold text-white">
               {getInitials(
                 user?.displayName ||
                   user?.email ||
@@ -296,8 +301,7 @@ function SidebarContent({
           )}
 
           <div className="min-w-0">
-
-            <p className="truncate text-sm font-medium">
+            <p className="truncate text-sm font-medium text-white">
               {user?.displayName ||
                 "User"}
             </p>
@@ -306,26 +310,21 @@ function SidebarContent({
               {user?.email ||
                 "Signed in"}
             </p>
-
           </div>
-
         </div>
 
         {/* LOGOUT */}
 
         <button
+          type="button"
           onClick={handleLogout}
-          className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm text-red-400 transition hover:bg-red-500/10"
+          className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm text-red-400 transition hover:bg-red-500/10 active:scale-[0.99]"
         >
-
           <LogOut size={18} />
 
-          Logout
-
+          <span>Logout</span>
         </button>
-
       </div>
-
     </div>
   );
 }
@@ -335,8 +334,13 @@ function SidebarContent({
 // ===========================================================
 
 function getInitials(value) {
-  return value
+  if (!value) {
+    return "U";
+  }
+
+  return String(value)
     .split(" ")
+    .filter(Boolean)
     .slice(0, 2)
     .map((word) =>
       word.charAt(0).toUpperCase()
