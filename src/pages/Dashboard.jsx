@@ -16,6 +16,7 @@ import {
   DollarSign,
   ChevronDown,
   RefreshCw,
+  Check,
 } from "lucide-react";
 
 import {
@@ -69,7 +70,6 @@ const CURRENCIES = {
 };
 
 export default function Dashboard({ user }) {
-
   // =========================================================
   // DATA
   // =========================================================
@@ -89,40 +89,28 @@ export default function Dashboard({ user }) {
   // SETTINGS
   // =========================================================
 
-  const [preferences, setPreferences] =
-    useState({
-      currency: "LKR",
+  const [preferences, setPreferences] = useState({
+    currency: "LKR",
+    exchangeCurrency: "USD",
 
-      // IMPORTANT
-      // Independent exchange card currency.
-      exchangeCurrency: "USD",
+    showFinance: true,
+    showTasks: true,
+    showGoals: true,
+    showHabits: true,
+    showFitness: true,
+    showTravel: true,
+  });
 
-      showFinance: true,
-      showTasks: true,
-      showGoals: true,
-      showHabits: true,
-      showFitness: true,
-      showTravel: true,
-    });
-
-  const [loading, setLoading] =
-    useState(true);
+  const [loading, setLoading] = useState(true);
 
   // =========================================================
   // EXCHANGE RATE
   // =========================================================
 
-  const [exchangeRate, setExchangeRate] =
-    useState(null);
-
-  const [exchangeLoading, setExchangeLoading] =
-    useState(false);
-
-  const [exchangeError, setExchangeError] =
-    useState(false);
-
-  const [exchangeOpen, setExchangeOpen] =
-    useState(false);
+  const [exchangeRate, setExchangeRate] = useState(null);
+  const [exchangeLoading, setExchangeLoading] = useState(false);
+  const [exchangeError, setExchangeError] = useState(false);
+  const [exchangeOpen, setExchangeOpen] = useState(false);
 
   // =========================================================
   // CURRENCY INFO
@@ -130,22 +118,17 @@ export default function Dashboard({ user }) {
 
   const currencyInfo = useMemo(() => {
     return (
-      CURRENCIES[
-        preferences.currency
-      ] || CURRENCIES.LKR
+      CURRENCIES[preferences.currency] ||
+      CURRENCIES.LKR
     );
   }, [preferences.currency]);
 
-  const exchangeCurrencyInfo =
-    useMemo(() => {
-      return (
-        CURRENCIES[
-          preferences.exchangeCurrency
-        ] || CURRENCIES.USD
-      );
-    }, [
-      preferences.exchangeCurrency,
-    ]);
+  const exchangeCurrencyInfo = useMemo(() => {
+    return (
+      CURRENCIES[preferences.exchangeCurrency] ||
+      CURRENCIES.USD
+    );
+  }, [preferences.exchangeCurrency]);
 
   // =========================================================
   // FORMAT MONEY
@@ -184,50 +167,47 @@ export default function Dashboard({ user }) {
       "notes",
     ];
 
-    const unsubscribers =
-      collectionNames.map(
-        (collectionName) => {
-          const reference = collection(
-            db,
-            "users",
-            user.uid,
-            collectionName
-          );
+    const unsubscribers = collectionNames.map(
+      (collectionName) => {
+        const reference = collection(
+          db,
+          "users",
+          user.uid,
+          collectionName
+        );
 
-          return onSnapshot(
-            reference,
-            (snapshot) => {
-              const items =
-                snapshot.docs.map(
-                  (item) => ({
-                    id: item.id,
-                    ...item.data(),
-                  })
-                );
+        return onSnapshot(
+          reference,
+          (snapshot) => {
+            const items = snapshot.docs.map(
+              (item) => ({
+                id: item.id,
+                ...item.data(),
+              })
+            );
 
-              setData((previous) => ({
-                ...previous,
-                [collectionName]: items,
-              }));
+            setData((previous) => ({
+              ...previous,
+              [collectionName]: items,
+            }));
 
-              setLoading(false);
-            },
-            (error) => {
-              console.error(
-                `${collectionName} error:`,
-                error
-              );
+            setLoading(false);
+          },
+          (error) => {
+            console.error(
+              `${collectionName} error:`,
+              error
+            );
 
-              setLoading(false);
-            }
-          );
-        }
-      );
+            setLoading(false);
+          }
+        );
+      }
+    );
 
     return () => {
       unsubscribers.forEach(
-        (unsubscribe) =>
-          unsubscribe()
+        (unsubscribe) => unsubscribe()
       );
     };
   }, [user?.uid]);
@@ -256,20 +236,16 @@ export default function Dashboard({ user }) {
           return;
         }
 
-        const settings =
-          snapshot.data();
+        const settings = snapshot.data();
 
         setPreferences({
           currency:
-            typeof settings.currency ===
-            "string"
+            typeof settings.currency === "string"
               ? settings.currency
               : "LKR",
 
-          // IMPORTANT
           exchangeCurrency:
-            typeof settings.exchangeCurrency ===
-            "string"
+            typeof settings.exchangeCurrency === "string"
               ? settings.exchangeCurrency
               : "USD",
 
@@ -305,31 +281,12 @@ export default function Dashboard({ user }) {
 
   // =========================================================
   // EXCHANGE RATE
-  //
-  // IMPORTANT:
-  //
-  // BASE = exchangeCurrency
-  // QUOTE = main application currency
-  //
-  // Example:
-  //
-  // Main Currency = LKR
-  // Exchange Currency = USD
-  //
-  // API:
-  // USD -> LKR
-  //
-  // If Main Currency = EUR:
-  //
-  // USD -> EUR
-  //
   // =========================================================
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadExchangeRate() {
-
       const base =
         preferences.exchangeCurrency;
 
@@ -338,7 +295,6 @@ export default function Dashboard({ user }) {
 
       setExchangeError(false);
 
-      // Same currency
       if (base === quote) {
         setExchangeRate(1);
         setExchangeLoading(false);
@@ -348,10 +304,9 @@ export default function Dashboard({ user }) {
       setExchangeLoading(true);
 
       try {
-        const response =
-          await fetch(
-            `https://api.frankfurter.dev/v2/rate/${base}/${quote}`
-          );
+        const response = await fetch(
+          `https://api.frankfurter.dev/v2/rate/${base}/${quote}`
+        );
 
         if (!response.ok) {
           throw new Error(
@@ -402,18 +357,15 @@ export default function Dashboard({ user }) {
 
   const changeExchangeCurrency =
     async (currency) => {
-
       if (!user?.uid) {
         return;
       }
 
       setExchangeOpen(false);
 
-      // Update local UI immediately
       setPreferences((previous) => ({
         ...previous,
-        exchangeCurrency:
-          currency,
+        exchangeCurrency: currency,
       }));
 
       try {
@@ -428,8 +380,7 @@ export default function Dashboard({ user }) {
         await setDoc(
           settingsRef,
           {
-            exchangeCurrency:
-              currency,
+            exchangeCurrency: currency,
           },
           {
             merge: true,
@@ -449,16 +400,16 @@ export default function Dashboard({ user }) {
 
   const today = new Date();
 
-  const todayString =
-    formatDate(today);
+  const todayString = formatDate(today);
 
-  const currentMonth =
-    `${today.getFullYear()}-${String(
-      today.getMonth() + 1
-    ).padStart(2, "0")}`;
+  const currentMonth = `${today.getFullYear()}-${String(
+    today.getMonth() + 1
+  ).padStart(2, "0")}`;
 
   // =========================================================
   // FINANCE
+  // CURRENT MONTH ONLY
+  // Used for monthly analytics and Finance Overview
   // =========================================================
 
   const financeStats = useMemo(() => {
@@ -466,7 +417,6 @@ export default function Dashboard({ user }) {
     let expense = 0;
 
     data.finance.forEach((item) => {
-
       if (
         !String(item.date || "").startsWith(
           currentMonth
@@ -491,8 +441,7 @@ export default function Dashboard({ user }) {
     return {
       income,
       expense,
-      balance:
-        income - expense,
+      balance: income - expense,
     };
   }, [
     data.finance,
@@ -500,15 +449,43 @@ export default function Dashboard({ user }) {
   ]);
 
   // =========================================================
+  // TOTAL FINANCE BALANCE
+  // ALL TIME
+  // =========================================================
+
+  const totalFinanceBalance = useMemo(() => {
+    let income = 0;
+    let expense = 0;
+
+    data.finance.forEach((item) => {
+      const amount = Number(
+        item.amount || 0
+      );
+
+      if (item.type === "income") {
+        income += amount;
+      }
+
+      if (item.type === "expense") {
+        expense += amount;
+      }
+    });
+
+    return {
+      income,
+      expense,
+      balance: income - expense,
+    };
+  }, [data.finance]);
+
+  // =========================================================
   // 7 DAY FINANCE
   // =========================================================
 
   const last7Days = useMemo(() => {
-
     const days = [];
 
     for (let i = 6; i >= 0; i--) {
-
       const date = new Date();
 
       date.setDate(
@@ -530,7 +507,6 @@ export default function Dashboard({ user }) {
       let expense = 0;
 
       data.finance.forEach((item) => {
-
         if (item.date !== dateString) {
           return;
         }
@@ -557,20 +533,18 @@ export default function Dashboard({ user }) {
     }
 
     return days;
-
   }, [data.finance]);
 
   // =========================================================
   // MONTHLY EXPENSE
+  // CURRENT MONTH ONLY
   // =========================================================
 
   const monthlyAnalytics =
     useMemo(() => {
-
       const categoryTotals = {};
 
       data.finance.forEach((item) => {
-
         if (item.type !== "expense") {
           return;
         }
@@ -608,7 +582,6 @@ export default function Dashboard({ user }) {
           (a, b) =>
             b.amount - a.amount
         );
-
     }, [
       data.finance,
       currentMonth,
@@ -619,7 +592,6 @@ export default function Dashboard({ user }) {
   // =========================================================
 
   const taskStats = useMemo(() => {
-
     const total =
       data.tasks.length;
 
@@ -647,7 +619,6 @@ export default function Dashboard({ user }) {
       pending,
       percentage,
     };
-
   }, [data.tasks]);
 
   // =========================================================
@@ -655,7 +626,6 @@ export default function Dashboard({ user }) {
   // =========================================================
 
   const goalStats = useMemo(() => {
-
     const total =
       data.goals.length;
 
@@ -678,7 +648,6 @@ export default function Dashboard({ user }) {
       completed,
       percentage,
     };
-
   }, [data.goals]);
 
   // =========================================================
@@ -686,7 +655,6 @@ export default function Dashboard({ user }) {
   // =========================================================
 
   const habitStats = useMemo(() => {
-
     const total =
       data.habits.length;
 
@@ -709,17 +677,19 @@ export default function Dashboard({ user }) {
       completedToday,
       percentage,
     };
-
   }, [data.habits]);
 
   // =========================================================
   // FITNESS
   // =========================================================
 
-  const fitnessStats = useMemo(() => ({
-    workouts:
-      data.fitness.length,
-  }), [data.fitness]);
+  const fitnessStats = useMemo(
+    () => ({
+      workouts:
+        data.fitness.length,
+    }),
+    [data.fitness]
+  );
 
   // =========================================================
   // EVENTS
@@ -727,10 +697,8 @@ export default function Dashboard({ user }) {
 
   const upcomingEvents =
     useMemo(() => {
-
       return [...data.calendar]
         .filter((event) => {
-
           if (!event.date) {
             return false;
           }
@@ -745,7 +713,6 @@ export default function Dashboard({ user }) {
           )
         )
         .slice(0, 5);
-
     }, [
       data.calendar,
       todayString,
@@ -757,10 +724,8 @@ export default function Dashboard({ user }) {
 
   const upcomingTrips =
     useMemo(() => {
-
       return [...data.travel]
         .filter((trip) => {
-
           if (!trip.date) {
             return true;
           }
@@ -775,7 +740,6 @@ export default function Dashboard({ user }) {
           )
         )
         .slice(0, 3);
-
     }, [
       data.travel,
       todayString,
@@ -787,10 +751,8 @@ export default function Dashboard({ user }) {
 
   const recentNotes =
     useMemo(() => {
-
       return [...data.notes]
         .sort((a, b) => {
-
           const aTime =
             a.createdAt?.seconds || 0;
 
@@ -798,10 +760,8 @@ export default function Dashboard({ user }) {
             b.createdAt?.seconds || 0;
 
           return bTime - aTime;
-
         })
         .slice(0, 3);
-
     }, [data.notes]);
 
   // =========================================================
@@ -848,20 +808,15 @@ export default function Dashboard({ user }) {
   return (
     <div className="min-h-screen text-white">
 
-      {/* =====================================================
-          HEADER
-      ====================================================== */}
+      {/* HEADER */}
 
       <div className="mb-8">
-
         <p className="mb-1 text-sm text-white/40">
           {greeting}
         </p>
 
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-
           <div>
-
             <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
               {user?.displayName ||
                 "My Dashboard"}
@@ -870,7 +825,6 @@ export default function Dashboard({ user }) {
             <p className="mt-2 text-base text-white/40">
               Here's your personal life overview.
             </p>
-
           </div>
 
           {user?.photoURL && (
@@ -880,64 +834,55 @@ export default function Dashboard({ user }) {
               className="h-14 w-14 rounded-2xl object-cover ring-1 ring-white/10"
             />
           )}
-
         </div>
-
       </div>
 
-      {/* =====================================================
-          TOP STATS
-      ====================================================== */}
+      {/* TOP STATS */}
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
 
         {preferences.showFinance && (
           <DashboardCard>
-
             <CardIcon>
               <Wallet size={21} />
             </CardIcon>
 
             <p className="text-base font-medium text-white/45">
-              Total balance this month
+              Total Balance
             </p>
 
             <h2
               className={`mt-2 text-3xl font-bold ${
-                financeStats.balance >= 0
+                totalFinanceBalance.balance >= 0
                   ? "text-emerald-400"
                   : "text-red-400"
               }`}
             >
               {formatMoney(
-                financeStats.balance
+                totalFinanceBalance.balance
               )}
             </h2>
 
             <div className="mt-3 flex gap-4 text-xs">
-
               <span className="text-emerald-400">
                 +{" "}
                 {formatMoney(
-                  financeStats.income
+                  totalFinanceBalance.income
                 )}
               </span>
 
               <span className="text-red-400">
                 -{" "}
                 {formatMoney(
-                  financeStats.expense
+                  totalFinanceBalance.expense
                 )}
               </span>
-
             </div>
-
           </DashboardCard>
         )}
 
         {preferences.showTasks && (
           <DashboardCard>
-
             <CardIcon>
               <CheckSquare size={21} />
             </CardIcon>
@@ -953,13 +898,11 @@ export default function Dashboard({ user }) {
             <p className="mt-2 text-sm text-white/30">
               {taskStats.completed} completed
             </p>
-
           </DashboardCard>
         )}
 
         {preferences.showGoals && (
           <DashboardCard>
-
             <CardIcon>
               <Target size={21} />
             </CardIcon>
@@ -977,13 +920,11 @@ export default function Dashboard({ user }) {
                 goalStats.percentage
               }
             />
-
           </DashboardCard>
         )}
 
         {preferences.showHabits && (
           <DashboardCard>
-
             <CardIcon>
               <Repeat size={21} />
             </CardIcon>
@@ -1000,16 +941,11 @@ export default function Dashboard({ user }) {
             <p className="mt-2 text-sm text-white/30">
               {habitStats.percentage}% completed
             </p>
-
           </DashboardCard>
         )}
-
       </div>
 
-      {/* =====================================================
-          EXCHANGE RATE CARD
-          INDEPENDENT CURRENCY SELECTOR
-      ====================================================== */}
+      {/* EXCHANGE RATE */}
 
       {preferences.showFinance && (
         <SectionCard className="mb-6">
@@ -1017,13 +953,11 @@ export default function Dashboard({ user }) {
           <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
 
             <div className="flex items-center gap-3">
-
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-white/70">
                 <DollarSign size={20} />
               </div>
 
               <div>
-
                 <h2 className="font-semibold">
                   Currency & Exchange Rate
                 </h2>
@@ -1031,14 +965,8 @@ export default function Dashboard({ user }) {
                 <p className="mt-1 text-xs text-white/30">
                   Click the currency to change it
                 </p>
-
               </div>
-
             </div>
-
-            {/* =================================================
-                CURRENCY SELECTOR
-            ================================================== */}
 
             <div className="relative">
 
@@ -1052,7 +980,6 @@ export default function Dashboard({ user }) {
                 }
                 className="flex min-w-[150px] items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 transition hover:bg-white/[0.09]"
               >
-
                 <div className="flex items-center gap-3">
 
                   <span className="text-lg font-bold">
@@ -1062,7 +989,6 @@ export default function Dashboard({ user }) {
                   </span>
 
                   <div className="text-left">
-
                     <p className="text-xs text-white/30">
                       Exchange
                     </p>
@@ -1072,7 +998,6 @@ export default function Dashboard({ user }) {
                         exchangeCurrencyInfo.code
                       }
                     </p>
-
                   </div>
 
                 </div>
@@ -1085,11 +1010,9 @@ export default function Dashboard({ user }) {
                       : ""
                   }`}
                 />
-
               </button>
 
               {exchangeOpen && (
-
                 <div className="absolute right-0 top-full z-30 mt-2 w-56 overflow-hidden rounded-2xl border border-white/10 bg-[#151515] p-2 shadow-2xl">
 
                   {Object.values(
@@ -1123,7 +1046,6 @@ export default function Dashboard({ user }) {
                           </span>
 
                           <div>
-
                             <p className="text-sm font-medium">
                               {currency.code}
                             </p>
@@ -1131,16 +1053,13 @@ export default function Dashboard({ user }) {
                             <p className="text-[10px] text-white/30">
                               {currency.name}
                             </p>
-
                           </div>
 
                         </div>
 
                         {active && (
                           <span className="text-emerald-400">
-                            <Check
-                              size={16}
-                            />
+                            <Check size={16} />
                           </span>
                         )}
 
@@ -1155,50 +1074,37 @@ export default function Dashboard({ user }) {
 
           </div>
 
-          {/* =================================================
-              RATE
-          ================================================== */}
-
           <div className="mt-5 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-5">
 
             {exchangeLoading ? (
 
               <div className="flex items-center gap-3">
-
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/10 border-t-white/70" />
 
                 <span className="text-sm text-white/40">
                   Loading exchange rate...
                 </span>
-
               </div>
 
             ) : exchangeError ? (
 
               <div>
-
                 <div className="flex items-center gap-2 text-red-400">
-
-                  <RefreshCw
-                    size={16}
-                  />
+                  <RefreshCw size={16} />
 
                   <p className="text-sm font-medium">
                     Exchange rate unavailable
                   </p>
-
                 </div>
 
                 <p className="mt-2 text-xs text-white/25">
                   Please check your internet connection and try again.
                 </p>
-
               </div>
 
             ) : exchangeRate !== null ? (
 
               <div>
-
                 <p className="text-sm text-white/40">
                   Current exchange rate
                 </p>
@@ -1206,12 +1112,10 @@ export default function Dashboard({ user }) {
                 <div className="mt-2 flex flex-wrap items-baseline gap-2">
 
                   <span className="text-2xl font-bold">
-
                     1{" "}
                     {
                       exchangeCurrencyInfo.code
                     }
-
                   </span>
 
                   <span className="text-white/30">
@@ -1219,11 +1123,9 @@ export default function Dashboard({ user }) {
                   </span>
 
                   <span className="text-2xl font-bold text-emerald-400">
-
                     {
                       currencyInfo.symbol
                     }{" "}
-
                     {Number(
                       exchangeRate
                     ).toLocaleString(
@@ -1233,7 +1135,6 @@ export default function Dashboard({ user }) {
                         maximumFractionDigits: 4,
                       }
                     )}
-
                   </span>
 
                   <span className="text-lg font-semibold text-emerald-400">
@@ -1245,7 +1146,6 @@ export default function Dashboard({ user }) {
                 </div>
 
                 <p className="mt-2 text-xs text-white/25">
-
                   1{" "}
                   {
                     exchangeCurrencyInfo.code
@@ -1255,9 +1155,7 @@ export default function Dashboard({ user }) {
                     currencyInfo.code
                   }
                   )
-
                 </p>
-
               </div>
 
             ) : null}
@@ -1267,9 +1165,7 @@ export default function Dashboard({ user }) {
         </SectionCard>
       )}
 
-      {/* =====================================================
-          FINANCE + TASKS
-      ====================================================== */}
+      {/* FINANCE + TASKS */}
 
       {(preferences.showFinance ||
         preferences.showTasks) && (
@@ -1280,9 +1176,7 @@ export default function Dashboard({ user }) {
             <SectionCard>
 
               <SectionHeader
-                icon={
-                  <Wallet size={20} />
-                }
+                icon={<Wallet size={20} />}
                 title="Finance Overview"
                 subtitle="This month"
               />
@@ -1291,9 +1185,7 @@ export default function Dashboard({ user }) {
 
                 <MiniCard
                   icon={
-                    <TrendingUp
-                      size={17}
-                    />
+                    <TrendingUp size={17} />
                   }
                   title="Income"
                   value={
@@ -1307,9 +1199,7 @@ export default function Dashboard({ user }) {
 
                 <MiniCard
                   icon={
-                    <TrendingDown
-                      size={17}
-                    />
+                    <TrendingDown size={17} />
                   }
                   title="Expenses"
                   value={
@@ -1331,9 +1221,7 @@ export default function Dashboard({ user }) {
 
               <SectionHeader
                 icon={
-                  <CheckSquare
-                    size={20}
-                  />
+                  <CheckSquare size={20} />
                 }
                 title="Task Progress"
                 subtitle="Your current task progress"
@@ -1368,9 +1256,7 @@ export default function Dashboard({ user }) {
         </div>
       )}
 
-      {/* =====================================================
-          FINANCE CHART
-      ====================================================== */}
+      {/* 7 DAY FINANCE */}
 
       {preferences.showFinance && (
         <SectionCard className="mb-6">
@@ -1390,9 +1276,7 @@ export default function Dashboard({ user }) {
               height="100%"
             >
 
-              <BarChart
-                data={last7Days}
-              >
+              <BarChart data={last7Days}>
 
                 <CartesianGrid
                   strokeDasharray="3 3"
@@ -1414,12 +1298,10 @@ export default function Dashboard({ user }) {
 
                 <Tooltip
                   contentStyle={{
-                    background:
-                      "#111",
+                    background: "#111",
                     border:
                       "1px solid rgba(255,255,255,0.1)",
-                    borderRadius:
-                      "16px",
+                    borderRadius: "16px",
                     color: "#fff",
                   }}
                   formatter={(value) =>
@@ -1431,24 +1313,14 @@ export default function Dashboard({ user }) {
                   dataKey="income"
                   name="Income"
                   fill="#34d399"
-                  radius={[
-                    6,
-                    6,
-                    0,
-                    0,
-                  ]}
+                  radius={[6, 6, 0, 0]}
                 />
 
                 <Bar
                   dataKey="expense"
                   name="Expense"
                   fill="#f87171"
-                  radius={[
-                    6,
-                    6,
-                    0,
-                    0,
-                  ]}
+                  radius={[6, 6, 0, 0]}
                 />
 
               </BarChart>
@@ -1460,9 +1332,7 @@ export default function Dashboard({ user }) {
         </SectionCard>
       )}
 
-      {/* =====================================================
-          MONTHLY EXPENSE
-      ====================================================== */}
+      {/* MONTHLY EXPENSE */}
 
       {preferences.showFinance && (
         <SectionCard className="mb-6">
@@ -1475,8 +1345,7 @@ export default function Dashboard({ user }) {
             subtitle="Where your money is going this month"
           />
 
-          {monthlyAnalytics.length ===
-          0 ? (
+          {monthlyAnalytics.length === 0 ? (
 
             <EmptyState text="No expenses recorded this month." />
 
@@ -1488,8 +1357,7 @@ export default function Dashboard({ user }) {
                 (item) => {
 
                   const percentage =
-                    financeStats.expense >
-                    0
+                    financeStats.expense > 0
                       ? Math.round(
                           (item.amount /
                             financeStats.expense) *
@@ -1499,9 +1367,7 @@ export default function Dashboard({ user }) {
 
                   return (
                     <div
-                      key={
-                        item.category
-                      }
+                      key={item.category}
                     >
 
                       <div className="mb-2 flex items-center justify-between">
@@ -1544,9 +1410,7 @@ export default function Dashboard({ user }) {
         </SectionCard>
       )}
 
-      {/* =====================================================
-          QUICK OVERVIEW
-      ====================================================== */}
+      {/* QUICK OVERVIEW */}
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 
@@ -1594,9 +1458,7 @@ export default function Dashboard({ user }) {
 
       </div>
 
-      {/* =====================================================
-          EVENTS + TRAVEL
-      ====================================================== */}
+      {/* EVENTS + TRAVEL */}
 
       <div className="grid gap-5 lg:grid-cols-2">
 
@@ -1604,16 +1466,13 @@ export default function Dashboard({ user }) {
 
           <SectionHeader
             icon={
-              <CalendarDays
-                size={20}
-              />
+              <CalendarDays size={20} />
             }
             title="Upcoming Events"
             subtitle="From your calendar"
           />
 
-          {upcomingEvents.length ===
-          0 ? (
+          {upcomingEvents.length === 0 ? (
 
             <EmptyState text="No upcoming events." />
 
@@ -1631,9 +1490,7 @@ export default function Dashboard({ user }) {
 
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10">
 
-                      <Clock
-                        size={17}
-                      />
+                      <Clock size={17} />
 
                     </div>
 
@@ -1651,10 +1508,12 @@ export default function Dashboard({ user }) {
                     </div>
 
                   </div>
+
                 )
               )}
 
             </div>
+
           )}
 
         </SectionCard>
@@ -1663,15 +1522,12 @@ export default function Dashboard({ user }) {
           <SectionCard>
 
             <SectionHeader
-              icon={
-                <Map size={20} />
-              }
+              icon={<Map size={20} />}
               title="Upcoming Travel"
               subtitle="Your next journeys"
             />
 
-            {upcomingTrips.length ===
-            0 ? (
+            {upcomingTrips.length === 0 ? (
 
               <EmptyState text="No upcoming trips." />
 
@@ -1710,10 +1566,12 @@ export default function Dashboard({ user }) {
                       )}
 
                     </div>
+
                   )
                 )}
 
               </div>
+
             )}
 
           </SectionCard>
@@ -1721,9 +1579,7 @@ export default function Dashboard({ user }) {
 
       </div>
 
-      {/* =====================================================
-          NOTES
-      ====================================================== */}
+      {/* NOTES */}
 
       <SectionCard className="mt-5">
 
@@ -1735,8 +1591,7 @@ export default function Dashboard({ user }) {
           subtitle="Your latest notes"
         />
 
-        {recentNotes.length ===
-        0 ? (
+        {recentNotes.length === 0 ? (
 
           <EmptyState text="No notes yet." />
 
@@ -1764,17 +1619,17 @@ export default function Dashboard({ user }) {
                   </p>
 
                 </div>
+
               )
             )}
 
           </div>
+
         )}
 
       </SectionCard>
 
-      {/* =====================================================
-          SETTINGS HINT
-      ====================================================== */}
+      {/* SETTINGS HINT */}
 
       {!preferences.showFinance &&
         !preferences.showTasks &&
@@ -1812,7 +1667,6 @@ export default function Dashboard({ user }) {
 // ===========================================================
 
 function formatDate(date) {
-
   const year =
     date.getFullYear();
 
