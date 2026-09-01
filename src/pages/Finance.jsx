@@ -54,55 +54,42 @@ const CURRENCIES = {
 };
 
 export default function Finance({ user }) {
-
-  const [records, setRecords] =
-    useState([]);
-
-  const [loading, setLoading] =
-    useState(true);
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   // =========================================================
   // MAIN CURRENCY
   // =========================================================
 
-  const [currency, setCurrency] =
-    useState("LKR");
+  const [currency, setCurrency] = useState("LKR");
 
   // =========================================================
   // FORM
   // =========================================================
 
-  const [showForm, setShowForm] =
-    useState(false);
-
-  const [editingId, setEditingId] =
-    useState(null);
-
-  const [saving, setSaving] =
-    useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   // =========================================================
   // TODAY
   // =========================================================
 
   const getToday = () => {
-    return new Date()
-      .toISOString()
-      .split("T")[0];
+    return new Date().toISOString().split("T")[0];
   };
 
   // =========================================================
   // FORM STATE
   // =========================================================
 
-  const [form, setForm] =
-    useState({
-      type: "income",
-      amount: "",
-      category: "Salary",
-      description: "",
-      date: getToday(),
-    });
+  const [form, setForm] = useState({
+    type: "income",
+    amount: "",
+    category: "Salary",
+    description: "",
+    date: getToday(),
+  });
 
   // =========================================================
   // CATEGORIES
@@ -134,20 +121,16 @@ export default function Finance({ user }) {
   // =========================================================
 
   const currentCurrency =
-    CURRENCIES[currency] ||
-    CURRENCIES.LKR;
+    CURRENCIES[currency] || CURRENCIES.LKR;
 
   // =========================================================
   // FORMAT MONEY
   // =========================================================
 
   const formatMoney = (amount) => {
-
-    const value =
-      Number(amount || 0);
+    const value = Number(amount || 0);
 
     try {
-
       return new Intl.NumberFormat(
         currentCurrency.locale,
         {
@@ -155,18 +138,13 @@ export default function Finance({ user }) {
           maximumFractionDigits: 2,
         }
       ).format(value);
-
     } catch {
-
       return value.toLocaleString();
-
     }
   };
 
   const money = (amount) => {
-    return `${currentCurrency.symbol} ${formatMoney(
-      amount
-    )}`;
+    return `${currentCurrency.symbol} ${formatMoney(amount)}`;
   };
 
   // =========================================================
@@ -174,530 +152,365 @@ export default function Finance({ user }) {
   // =========================================================
 
   useEffect(() => {
-
     if (!user?.uid) {
-
       setRecords([]);
       setLoading(false);
-
       return;
     }
 
-    const financeRef =
-      collection(
-        db,
-        "users",
-        user.uid,
-        "finance"
-      );
+    const financeRef = collection(
+      db,
+      "users",
+      user.uid,
+      "finance"
+    );
 
-    const unsubscribe =
-      onSnapshot(
-        financeRef,
-        (snapshot) => {
+    const unsubscribe = onSnapshot(
+      financeRef,
+      (snapshot) => {
+        const financeData = snapshot.docs.map(
+          (item) => ({
+            id: item.id,
+            ...item.data(),
+          })
+        );
 
-          const financeData =
-            snapshot.docs.map(
-              (item) => ({
-                id: item.id,
-                ...item.data(),
-              })
-            );
+        financeData.sort((a, b) => {
+          const dateA = String(a.date || "");
+          const dateB = String(b.date || "");
 
-          financeData.sort(
-            (a, b) => {
+          return dateB.localeCompare(dateA);
+        });
 
-              const dateA =
-                String(
-                  a.date || ""
-                );
+        setRecords(financeData);
+        setLoading(false);
+      },
+      (error) => {
+        console.error(
+          "Finance Firestore error:",
+          error
+        );
 
-              const dateB =
-                String(
-                  b.date || ""
-                );
+        setLoading(false);
+      }
+    );
 
-              return dateB.localeCompare(
-                dateA
-              );
-            }
-          );
-
-          setRecords(
-            financeData
-          );
-
-          setLoading(false);
-        },
-        (error) => {
-
-          console.error(
-            "Finance Firestore error:",
-            error
-          );
-
-          setLoading(false);
-        }
-      );
-
-    return () =>
-      unsubscribe();
-
+    return () => unsubscribe();
   }, [user?.uid]);
 
   // =========================================================
   // MAIN CURRENCY FROM SETTINGS
-  //
-  // IMPORTANT:
-  //
-  // Finance only listens to `currency`.
-  //
-  // It does NOT use `exchangeCurrency`.
-  //
   // =========================================================
 
   useEffect(() => {
-
     if (!user?.uid) {
-
       setCurrency("LKR");
-
       return;
     }
 
-    const settingsRef =
-      doc(
-        db,
-        "users",
-        user.uid,
-        "settings",
-        "preferences"
-      );
+    const settingsRef = doc(
+      db,
+      "users",
+      user.uid,
+      "settings",
+      "preferences"
+    );
 
-    const unsubscribe =
-      onSnapshot(
-        settingsRef,
-        (snapshot) => {
+    const unsubscribe = onSnapshot(
+      settingsRef,
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          setCurrency("LKR");
+          return;
+        }
 
-          if (!snapshot.exists()) {
+        const settings = snapshot.data();
 
-            setCurrency("LKR");
+        const savedCurrency =
+          settings.currency;
 
-            return;
-          }
-
-          const data =
-            snapshot.data();
-
-          const savedCurrency =
-            data.currency;
-
-          if (
-            savedCurrency &&
-            CURRENCIES[
-              savedCurrency
-            ]
-          ) {
-
-            setCurrency(
-              savedCurrency
-            );
-
-          } else {
-
-            setCurrency("LKR");
-
-          }
-        },
-        (error) => {
-
-          console.error(
-            "Currency settings error:",
-            error
-          );
-
+        if (
+          savedCurrency &&
+          CURRENCIES[savedCurrency]
+        ) {
+          setCurrency(savedCurrency);
+        } else {
           setCurrency("LKR");
         }
-      );
+      },
+      (error) => {
+        console.error(
+          "Currency settings error:",
+          error
+        );
 
-    return () =>
-      unsubscribe();
+        setCurrency("LKR");
+      }
+    );
 
+    return () => unsubscribe();
   }, [user?.uid]);
 
   // =========================================================
   // CURRENT MONTH
   // =========================================================
 
-  const currentMonth =
-    new Date()
-      .toISOString()
-      .slice(0, 7);
+  const currentMonth = new Date()
+    .toISOString()
+    .slice(0, 7);
 
   // =========================================================
   // MONTHLY RECORDS
   // =========================================================
 
-  const monthlyRecords =
-    useMemo(() => {
-
-      return records.filter(
-        (item) =>
-          String(
-            item.date || ""
-          ).startsWith(
-            currentMonth
-          )
-      );
-
-    }, [
-      records,
-      currentMonth,
-    ]);
+  const monthlyRecords = useMemo(() => {
+    return records.filter((item) =>
+      String(item.date || "").startsWith(
+        currentMonth
+      )
+    );
+  }, [records, currentMonth]);
 
   // =========================================================
   // TOTALS
   // =========================================================
 
-  const totals =
-    useMemo(() => {
+  const totals = useMemo(() => {
+    let income = 0;
+    let expense = 0;
 
-      let income = 0;
-      let expense = 0;
-
-      monthlyRecords.forEach(
-        (item) => {
-
-          const amount =
-            Number(
-              item.amount || 0
-            );
-
-          if (
-            item.type ===
-            "income"
-          ) {
-
-            income += amount;
-
-          }
-
-          if (
-            item.type ===
-            "expense"
-          ) {
-
-            expense += amount;
-
-          }
-
-        }
+    monthlyRecords.forEach((item) => {
+      const amount = Number(
+        item.amount || 0
       );
 
-      return {
-        income,
-        expense,
-        balance:
-          income - expense,
-      };
+      if (item.type === "income") {
+        income += amount;
+      }
 
-    }, [monthlyRecords]);
+      if (item.type === "expense") {
+        expense += amount;
+      }
+    });
+
+    return {
+      income,
+      expense,
+      balance: income - expense,
+    };
+  }, [monthlyRecords]);
 
   // =========================================================
   // FORM CHANGE
   // =========================================================
 
-  const handleChange =
-    (event) => {
+  const handleChange = (event) => {
+    const {
+      name,
+      value,
+    } = event.target;
 
-      const {
-        name,
-        value,
-      } = event.target;
-
-      setForm(
-        (previous) => ({
-          ...previous,
-          [name]: value,
-        })
-      );
-    };
+    setForm((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+  };
 
   // =========================================================
   // CHANGE TYPE
   // =========================================================
 
-  const changeType =
-    (type) => {
+  const changeType = (type) => {
+    setForm((previous) => ({
+      ...previous,
+      type,
 
-      setForm(
-        (previous) => ({
-          ...previous,
-          type,
-
-          category:
-            type === "income"
-              ? "Salary"
-              : "Food",
-        })
-      );
-    };
+      category:
+        type === "income"
+          ? "Salary"
+          : "Food",
+    }));
+  };
 
   // =========================================================
-  // OPEN ADD
+  // OPEN ADD FORM
   // =========================================================
 
-  const openAddForm =
-    () => {
+  const openAddForm = () => {
+    setEditingId(null);
 
-      setEditingId(null);
+    setForm({
+      type: "income",
+      amount: "",
+      category: "Salary",
+      description: "",
+      date: getToday(),
+    });
 
-      setForm({
-        type: "income",
-        amount: "",
-        category: "Salary",
-        description: "",
-        date: getToday(),
-      });
-
-      setShowForm(true);
-    };
+    setShowForm(true);
+  };
 
   // =========================================================
-  // OPEN EDIT
+  // OPEN EDIT FORM
   // =========================================================
 
-  const openEditForm =
-    (item) => {
+  const openEditForm = (item) => {
+    setEditingId(item.id);
 
-      setEditingId(
-        item.id
-      );
+    setForm({
+      type: item.type || "income",
+      amount: item.amount ?? "",
+      category: item.category || "Other",
+      description: item.description || "",
+      date: item.date || getToday(),
+    });
 
-      setForm({
-        type:
-          item.type ||
-          "income",
-
-        amount:
-          item.amount ??
-          "",
-
-        category:
-          item.category ||
-          "Other",
-
-        description:
-          item.description ||
-          "",
-
-        date:
-          item.date ||
-          getToday(),
-      });
-
-      setShowForm(true);
-    };
+    setShowForm(true);
+  };
 
   // =========================================================
-  // RESET
+  // RESET FORM
   // =========================================================
 
-  const resetForm =
-    () => {
+  const resetForm = () => {
+    setEditingId(null);
 
-      setEditingId(null);
+    setForm({
+      type: "income",
+      amount: "",
+      category: "Salary",
+      description: "",
+      date: getToday(),
+    });
 
-      setForm({
-        type: "income",
-        amount: "",
-        category: "Salary",
-        description: "",
-        date: getToday(),
-      });
-
-      setShowForm(false);
-    };
+    setShowForm(false);
+  };
 
   // =========================================================
   // SAVE
   // =========================================================
 
-  const handleSubmit =
-    async (event) => {
+  const handleSubmit = async (event) => {
+    event.preventDefault();
 
-      event.preventDefault();
+    if (!user?.uid) {
+      alert("You are not logged in.");
+      return;
+    }
 
-      if (!user?.uid) {
+    const amount = Number(form.amount);
 
-        alert(
-          "You are not logged in."
+    if (!amount || amount <= 0) {
+      alert("Please enter a valid amount.");
+      return;
+    }
+
+    if (!form.date) {
+      alert("Please select a date.");
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const financeRef = collection(
+        db,
+        "users",
+        user.uid,
+        "finance"
+      );
+
+      const financeData = {
+        type: form.type,
+        amount,
+        category: form.category,
+        description:
+          form.description.trim(),
+        date: form.date,
+      };
+
+      if (editingId) {
+        const recordRef = doc(
+          db,
+          "users",
+          user.uid,
+          "finance",
+          editingId
         );
 
-        return;
+        await updateDoc(
+          recordRef,
+          financeData
+        );
+      } else {
+        await addDoc(financeRef, {
+          ...financeData,
+          createdAt:
+            serverTimestamp(),
+        });
       }
 
-      const amount =
-        Number(form.amount);
+      resetForm();
+    } catch (error) {
+      console.error(
+        "Finance save error:",
+        error
+      );
 
-      if (
-        !amount ||
-        amount <= 0
-      ) {
-
-        alert(
-          "Please enter a valid amount."
-        );
-
-        return;
-      }
-
-      if (!form.date) {
-
-        alert(
-          "Please select a date."
-        );
-
-        return;
-      }
-
-      setSaving(true);
-
-      try {
-
-        const financeRef =
-          collection(
-            db,
-            "users",
-            user.uid,
-            "finance"
-          );
-
-        const financeData = {
-          type:
-            form.type,
-
-          amount:
-            amount,
-
-          category:
-            form.category,
-
-          description:
-            form.description.trim(),
-
-          date:
-            form.date,
-        };
-
-        if (editingId) {
-
-          const recordRef =
-            doc(
-              db,
-              "users",
-              user.uid,
-              "finance",
-              editingId
-            );
-
-          await updateDoc(
-            recordRef,
-            financeData
-          );
-
-        } else {
-
-          await addDoc(
-            financeRef,
-            {
-              ...financeData,
-
-              createdAt:
-                serverTimestamp(),
-            }
-          );
-
-        }
-
-        resetForm();
-
-      } catch (error) {
-
-        console.error(
-          "Finance save error:",
-          error
-        );
-
-        alert(
-          "Could not save the transaction. Check Firebase configuration."
-        );
-
-      } finally {
-
-        setSaving(false);
-
-      }
-    };
+      alert(
+        "Could not save the transaction. Check Firebase configuration."
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // =========================================================
   // DELETE
   // =========================================================
 
-  const handleDelete =
-    async (id) => {
+  const handleDelete = async (id) => {
+    if (!user?.uid) {
+      return;
+    }
 
-      if (!user?.uid) {
-        return;
-      }
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this transaction?"
+    );
 
-      const confirmed =
-        window.confirm(
-          "Are you sure you want to delete this transaction?"
-        );
+    if (!confirmed) {
+      return;
+    }
 
-      if (!confirmed) {
-        return;
-      }
+    try {
+      const recordRef = doc(
+        db,
+        "users",
+        user.uid,
+        "finance",
+        id
+      );
 
-      try {
+      await deleteDoc(recordRef);
+    } catch (error) {
+      console.error(
+        "Finance delete error:",
+        error
+      );
 
-        const recordRef =
-          doc(
-            db,
-            "users",
-            user.uid,
-            "finance",
-            id
-          );
-
-        await deleteDoc(
-          recordRef
-        );
-
-      } catch (error) {
-
-        console.error(
-          "Finance delete error:",
-          error
-        );
-
-        alert(
-          "Could not delete this transaction."
-        );
-      }
-    };
+      alert(
+        "Could not delete this transaction."
+      );
+    }
+  };
 
   // =========================================================
   // LOADING
   // =========================================================
 
   if (loading) {
-
     return (
-      <Loading
-        text="Loading finance..."
-      />
+      <Loading text="Loading finance..." />
     );
   }
 
@@ -711,14 +524,15 @@ export default function Finance({ user }) {
   // =========================================================
 
   return (
-    <div className="min-h-screen text-white">
+    <div className="min-h-screen pb-24 text-white sm:pb-0">
 
-      {/* HEADER */}
+      {/* =====================================================
+          HEADER
+      ====================================================== */}
 
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 
         <div>
-
           <h1 className="text-3xl font-bold tracking-tight">
             Finance
           </h1>
@@ -726,29 +540,28 @@ export default function Finance({ user }) {
           <p className="mt-2 text-sm text-white/40">
             Track your income and expenses.
           </p>
-
         </div>
+
+        {/* DESKTOP ADD BUTTON */}
 
         <button
           type="button"
           onClick={openAddForm}
-          className="flex items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:bg-white/90 active:scale-[0.98]"
+          className="hidden items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:bg-white/90 active:scale-[0.98] sm:flex"
         >
-
           <Plus size={18} />
-
           Add Transaction
-
         </button>
 
       </div>
 
-      {/* CURRENCY */}
+      {/* =====================================================
+          CURRENCY
+      ====================================================== */}
 
       <div className="mb-5 flex items-center justify-between rounded-2xl border border-white/[0.07] bg-white/[0.035] px-4 py-3 backdrop-blur-xl">
 
         <div>
-
           <p className="text-xs text-white/30">
             Current Currency
           </p>
@@ -756,7 +569,6 @@ export default function Finance({ user }) {
           <p className="mt-1 text-sm font-semibold text-white">
             {currentCurrency.code}
           </p>
-
         </div>
 
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.07] text-sm font-semibold text-white/70">
@@ -765,7 +577,9 @@ export default function Finance({ user }) {
 
       </div>
 
-      {/* SUMMARY */}
+      {/* =====================================================
+          SUMMARY
+      ====================================================== */}
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
 
@@ -774,9 +588,7 @@ export default function Finance({ user }) {
         <div className="rounded-3xl border border-green-500/20 bg-green-500/5 p-5 backdrop-blur-xl">
 
           <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-green-500/10 text-green-400">
-
             <TrendingUp size={20} />
-
           </div>
 
           <p className="text-sm text-white/40">
@@ -794,9 +606,7 @@ export default function Finance({ user }) {
         <div className="rounded-3xl border border-red-500/20 bg-red-500/5 p-5 backdrop-blur-xl">
 
           <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-red-500/10 text-red-400">
-
             <TrendingDown size={20} />
-
           </div>
 
           <p className="text-sm text-white/40">
@@ -826,9 +636,7 @@ export default function Finance({ user }) {
                 : "bg-red-500/10 text-red-400"
             }`}
           >
-
             <Wallet size={20} />
-
           </div>
 
           <p className="text-sm text-white/40">
@@ -849,9 +657,11 @@ export default function Finance({ user }) {
 
       </div>
 
-      {/* TRANSACTIONS */}
+      {/* =====================================================
+          TRANSACTIONS
+      ====================================================== */}
 
-      <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
+      <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-xl sm:p-5">
 
         <div className="mb-5">
 
@@ -899,38 +709,33 @@ export default function Finance({ user }) {
                 className="flex flex-col gap-4 rounded-2xl bg-white/[0.03] p-4 transition hover:bg-white/[0.06] sm:flex-row sm:items-center sm:justify-between"
               >
 
-                <div className="flex items-center gap-4">
+                {/* LEFT */}
+
+                <div className="flex min-w-0 items-center gap-4">
 
                   <div
-                    className={`flex h-11 w-11 items-center justify-center rounded-xl ${
-                      item.type ===
-                      "income"
+                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+                      item.type === "income"
                         ? "bg-green-500/10 text-green-400"
                         : "bg-red-500/10 text-red-400"
                     }`}
                   >
 
-                    {item.type ===
-                    "income" ? (
-                      <TrendingUp
-                        size={18}
-                      />
+                    {item.type === "income" ? (
+                      <TrendingUp size={18} />
                     ) : (
-                      <TrendingDown
-                        size={18}
-                      />
+                      <TrendingDown size={18} />
                     )}
 
                   </div>
 
-                  <div>
+                  <div className="min-w-0">
 
-                    <p className="font-medium">
-                      {item.category ||
-                        "Other"}
+                    <p className="truncate font-medium">
+                      {item.category || "Other"}
                     </p>
 
-                    <p className="text-xs text-white/30">
+                    <p className="truncate text-xs text-white/30">
                       {item.description ||
                         "No description"}
                     </p>
@@ -943,27 +748,25 @@ export default function Finance({ user }) {
 
                 </div>
 
+                {/* RIGHT */}
+
                 <div className="flex items-center justify-between gap-4 sm:justify-end">
 
                   <p
                     className={`font-semibold ${
-                      item.type ===
-                      "income"
+                      item.type === "income"
                         ? "text-green-400"
                         : "text-red-400"
                     }`}
                   >
 
-                    {item.type ===
-                    "income"
+                    {item.type === "income"
                       ? "+"
                       : "-"}
 
                     {" "}
 
-                    {money(
-                      item.amount
-                    )}
+                    {money(item.amount)}
 
                   </p>
 
@@ -972,33 +775,23 @@ export default function Finance({ user }) {
                     <button
                       type="button"
                       onClick={() =>
-                        openEditForm(
-                          item
-                        )
+                        openEditForm(item)
                       }
                       className="rounded-xl bg-white/10 p-2 transition hover:bg-white/20"
+                      aria-label="Edit transaction"
                     >
-
-                      <Pencil
-                        size={15}
-                      />
-
+                      <Pencil size={15} />
                     </button>
 
                     <button
                       type="button"
                       onClick={() =>
-                        handleDelete(
-                          item.id
-                        )
+                        handleDelete(item.id)
                       }
                       className="rounded-xl bg-red-500/10 p-2 text-red-400 transition hover:bg-red-500/20"
+                      aria-label="Delete transaction"
                     >
-
-                      <Trash2
-                        size={15}
-                      />
-
+                      <Trash2 size={15} />
                     </button>
 
                   </div>
@@ -1016,16 +809,40 @@ export default function Finance({ user }) {
       </div>
 
       {/* =====================================================
+          MOBILE FLOATING ADD BUTTON
+      ====================================================== */}
+
+      <button
+        type="button"
+        onClick={openAddForm}
+        aria-label="Add transaction"
+        className="fixed bottom-24 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-white text-black shadow-2xl shadow-black/40 transition hover:bg-white/90 active:scale-90 sm:hidden"
+      >
+        <Plus size={25} strokeWidth={2.5} />
+      </button>
+
+      {/* =====================================================
           FORM MODAL
       ====================================================== */}
 
       {showForm && (
 
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+          onMouseDown={(event) => {
+            if (
+              event.target === event.currentTarget
+            ) {
+              resetForm();
+            }
+          }}
+        >
 
-          <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-[#111] p-6 shadow-2xl">
+          <div className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl border border-white/10 bg-[#111] shadow-2xl sm:max-w-lg sm:rounded-3xl">
 
-            <div className="mb-6 flex items-center justify-between">
+            {/* MODAL HEADER */}
+
+            <div className="flex shrink-0 items-center justify-between border-b border-white/[0.06] p-5 sm:p-6">
 
               <div>
 
@@ -1044,188 +861,169 @@ export default function Finance({ user }) {
               <button
                 type="button"
                 onClick={resetForm}
-                className="rounded-xl bg-white/10 p-2 hover:bg-white/20"
+                className="rounded-xl bg-white/10 p-2 transition hover:bg-white/20"
+                aria-label="Close"
               >
-
                 <X size={18} />
-
               </button>
 
             </div>
 
-            <form
-              onSubmit={handleSubmit}
-              className="space-y-4"
-            >
+            {/* FORM SCROLL AREA */}
 
-              {/* TYPE */}
+            <div className="overflow-y-auto p-5 sm:p-6">
 
-              <div className="grid grid-cols-2 gap-2">
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    changeType(
-                      "income"
-                    )
-                  }
-                  className={`rounded-2xl py-3 text-sm font-medium ${
-                    form.type ===
-                    "income"
-                      ? "bg-green-500 text-white"
-                      : "bg-white/10 text-white/60"
-                  }`}
-                >
-                  Income
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    changeType(
-                      "expense"
-                    )
-                  }
-                  className={`rounded-2xl py-3 text-sm font-medium ${
-                    form.type ===
-                    "expense"
-                      ? "bg-red-500 text-white"
-                      : "bg-white/10 text-white/60"
-                  }`}
-                >
-                  Expense
-                </button>
-
-              </div>
-
-              {/* AMOUNT */}
-
-              <div>
-
-                <label className="mb-2 block text-xs text-white/40">
-                  Amount ({currentCurrency.code})
-                </label>
-
-                <input
-                  type="number"
-                  name="amount"
-                  value={form.amount}
-                  onChange={handleChange}
-                  placeholder="5000"
-                  min="0"
-                  step="0.01"
-                  required
-                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-white/20 focus:border-white/30"
-                />
-
-              </div>
-
-              {/* CATEGORY */}
-
-              <div>
-
-                <label className="mb-2 block text-xs text-white/40">
-                  Category
-                </label>
-
-                <select
-                  name="category"
-                  value={
-                    form.category
-                  }
-                  onChange={
-                    handleChange
-                  }
-                  className="w-full rounded-2xl border border-white/10 bg-[#181818] px-4 py-3 text-white outline-none"
-                >
-
-                  {categories.map(
-                    (category) => (
-                      <option
-                        key={
-                          category
-                        }
-                        value={
-                          category
-                        }
-                      >
-                        {category}
-                      </option>
-                    )
-                  )}
-
-                </select>
-
-              </div>
-
-              {/* DESCRIPTION */}
-
-              <div>
-
-                <label className="mb-2 block text-xs text-white/40">
-                  Description
-                </label>
-
-                <input
-                  type="text"
-                  name="description"
-                  value={
-                    form.description
-                  }
-                  onChange={
-                    handleChange
-                  }
-                  placeholder="Monthly salary"
-                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-white/20 focus:border-white/30"
-                />
-
-              </div>
-
-              {/* DATE */}
-
-              <div>
-
-                <label className="mb-2 block text-xs text-white/40">
-                  Date
-                </label>
-
-                <input
-                  type="date"
-                  name="date"
-                  value={
-                    form.date
-                  }
-                  onChange={
-                    handleChange
-                  }
-                  required
-                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none"
-                />
-
-              </div>
-
-              {/* SAVE */}
-
-              <button
-                type="submit"
-                disabled={saving}
-                className={`w-full rounded-2xl py-3 font-semibold transition disabled:opacity-50 ${
-                  form.type ===
-                  "income"
-                    ? "bg-green-500 hover:bg-green-400"
-                    : "bg-red-500 hover:bg-red-400"
-                }`}
+              <form
+                onSubmit={handleSubmit}
+                className="space-y-4"
               >
 
-                {saving
-                  ? "Saving..."
-                  : editingId
-                  ? "Update Transaction"
-                  : "Save Transaction"}
+                {/* TYPE */}
 
-              </button>
+                <div className="grid grid-cols-2 gap-2">
 
-            </form>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      changeType("income")
+                    }
+                    className={`rounded-2xl py-3 text-sm font-medium transition ${
+                      form.type === "income"
+                        ? "bg-green-500 text-white"
+                        : "bg-white/10 text-white/60 hover:bg-white/15"
+                    }`}
+                  >
+                    Income
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      changeType("expense")
+                    }
+                    className={`rounded-2xl py-3 text-sm font-medium transition ${
+                      form.type === "expense"
+                        ? "bg-red-500 text-white"
+                        : "bg-white/10 text-white/60 hover:bg-white/15"
+                    }`}
+                  >
+                    Expense
+                  </button>
+
+                </div>
+
+                {/* AMOUNT */}
+
+                <div>
+
+                  <label className="mb-2 block text-xs text-white/40">
+                    Amount ({currentCurrency.code})
+                  </label>
+
+                  <input
+                    type="number"
+                    name="amount"
+                    value={form.amount}
+                    onChange={handleChange}
+                    placeholder="5000"
+                    min="0"
+                    step="0.01"
+                    required
+                    inputMode="decimal"
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-white/20 focus:border-white/30"
+                  />
+
+                </div>
+
+                {/* CATEGORY */}
+
+                <div>
+
+                  <label className="mb-2 block text-xs text-white/40">
+                    Category
+                  </label>
+
+                  <select
+                    name="category"
+                    value={form.category}
+                    onChange={handleChange}
+                    className="w-full rounded-2xl border border-white/10 bg-[#181818] px-4 py-3 text-white outline-none"
+                  >
+
+                    {categories.map(
+                      (category) => (
+                        <option
+                          key={category}
+                          value={category}
+                        >
+                          {category}
+                        </option>
+                      )
+                    )}
+
+                  </select>
+
+                </div>
+
+                {/* DESCRIPTION */}
+
+                <div>
+
+                  <label className="mb-2 block text-xs text-white/40">
+                    Description
+                  </label>
+
+                  <input
+                    type="text"
+                    name="description"
+                    value={form.description}
+                    onChange={handleChange}
+                    placeholder="Monthly salary"
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-white/20 focus:border-white/30"
+                  />
+
+                </div>
+
+                {/* DATE */}
+
+                <div>
+
+                  <label className="mb-2 block text-xs text-white/40">
+                    Date
+                  </label>
+
+                  <input
+                    type="date"
+                    name="date"
+                    value={form.date}
+                    onChange={handleChange}
+                    required
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none"
+                  />
+
+                </div>
+
+                {/* SAVE */}
+
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className={`w-full rounded-2xl py-3 font-semibold transition disabled:opacity-50 ${
+                    form.type === "income"
+                      ? "bg-green-500 hover:bg-green-400"
+                      : "bg-red-500 hover:bg-red-400"
+                  }`}
+                >
+                  {saving
+                    ? "Saving..."
+                    : editingId
+                    ? "Update Transaction"
+                    : "Save Transaction"}
+                </button>
+
+              </form>
+
+            </div>
 
           </div>
 
