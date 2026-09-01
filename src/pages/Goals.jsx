@@ -11,6 +11,7 @@ import {
   Clock3,
   AlertCircle,
   Wallet,
+  ArrowUpRight,
 } from "lucide-react";
 
 import {
@@ -92,11 +93,7 @@ export default function Goals({ user }) {
         setLoading(false);
       },
       (error) => {
-        console.error(
-          "Goals Firestore error:",
-          error
-        );
-
+        console.error("Goals Firestore error:", error);
         setLoading(false);
       }
     );
@@ -116,14 +113,16 @@ export default function Goals({ user }) {
     }
 
     return goals.filter((goal) =>
-      `${goal.title} ${goal.category} ${goal.description}`
+      `${goal.title || ""} ${goal.category || ""} ${
+        goal.description || ""
+      }`
         .toLowerCase()
         .includes(value)
     );
   }, [goals, search]);
 
   // =========================================================
-  // TOTALS
+  // STATISTICS
   // =========================================================
 
   const statistics = useMemo(() => {
@@ -272,10 +271,7 @@ export default function Goals({ user }) {
           editingGoal.id
         );
 
-        await updateDoc(
-          goalRef,
-          goalData
-        );
+        await updateDoc(goalRef, goalData);
       } else {
         await addDoc(
           collection(
@@ -293,10 +289,7 @@ export default function Goals({ user }) {
 
       closeModal();
     } catch (error) {
-      console.error(
-        "Saving goal failed:",
-        error
-      );
+      console.error("Saving goal failed:", error);
 
       alert(
         "Could not save the goal. Check Firebase."
@@ -333,9 +326,7 @@ export default function Goals({ user }) {
         error
       );
 
-      alert(
-        "Could not delete the goal."
-      );
+      alert("Could not delete the goal.");
     }
   };
 
@@ -361,7 +352,7 @@ export default function Goals({ user }) {
       <div className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
 
         <div>
-          <p className="mb-1 text-sm text-white/40">
+          <p className="mb-1 text-sm text-blue-400/70">
             Personal targets
           </p>
 
@@ -376,7 +367,7 @@ export default function Goals({ user }) {
 
         <button
           onClick={openAddModal}
-          className="flex items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:bg-white/90"
+          className="flex items-center justify-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-400"
         >
           <Plus size={18} />
           Add Goal
@@ -392,24 +383,28 @@ export default function Goals({ user }) {
           icon={<Target size={20} />}
           title="Total Goals"
           value={statistics.total}
+          color="blue"
         />
 
         <StatCard
           icon={<Clock3 size={20} />}
           title="Active Goals"
           value={statistics.active}
+          color="blue"
         />
 
         <StatCard
           icon={<CheckCircle2 size={20} />}
           title="Completed"
           value={statistics.completed}
+          color="green"
         />
 
         <StatCard
           icon={<Wallet size={20} />}
           title="Total Saved"
           value={`Rs. ${statistics.saved.toLocaleString()}`}
+          color="green"
         />
 
       </div>
@@ -422,7 +417,7 @@ export default function Goals({ user }) {
 
           <Search
             size={18}
-            className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30"
+            className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400/40"
           />
 
           <input
@@ -432,7 +427,7 @@ export default function Goals({ user }) {
             onChange={(event) =>
               setSearch(event.target.value)
             }
-            className="w-full rounded-2xl border border-white/10 bg-white/[0.04] py-3 pl-11 pr-4 text-sm text-white outline-none placeholder:text-white/25 focus:border-white/20"
+            className="w-full rounded-2xl border border-white/10 bg-white/[0.04] py-3 pl-11 pr-4 text-sm text-white outline-none placeholder:text-white/25 transition focus:border-blue-400/40 focus:bg-blue-500/[0.03]"
           />
 
         </div>
@@ -513,8 +508,47 @@ function GoalCard({
   const deadlineInfo =
     getDeadlineInfo(goal.deadline);
 
+  const isOverdue =
+    !completed &&
+    deadlineInfo?.overdue;
+
+  const theme = completed
+    ? {
+        border:
+          "border-green-400/20 hover:border-green-400/40",
+        icon:
+          "bg-green-500/10 text-green-400",
+        progress:
+          "bg-green-400",
+        amount:
+          "text-green-400",
+      }
+    : isOverdue
+    ? {
+        border:
+          "border-red-400/20 hover:border-red-400/40",
+        icon:
+          "bg-red-500/10 text-red-400",
+        progress:
+          "bg-red-400",
+        amount:
+          "text-red-400",
+      }
+    : {
+        border:
+          "border-blue-400/20 hover:border-blue-400/40",
+        icon:
+          "bg-blue-500/10 text-blue-400",
+        progress:
+          "bg-blue-400",
+        amount:
+          "text-blue-400",
+      };
+
   return (
-    <div className="group rounded-3xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl transition hover:border-white/20">
+    <div
+      className={`group rounded-3xl border bg-white/[0.04] p-5 backdrop-blur-xl transition ${theme.border}`}
+    >
 
       {/* TOP */}
 
@@ -522,7 +556,9 @@ function GoalCard({
 
         <div className="flex min-w-0 items-start gap-3">
 
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10">
+          <div
+            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${theme.icon}`}
+          >
             <Target size={20} />
           </div>
 
@@ -544,7 +580,7 @@ function GoalCard({
 
           <button
             onClick={onEdit}
-            className="rounded-xl p-2 text-white/40 transition hover:bg-white/10 hover:text-white"
+            className="rounded-xl p-2 text-white/40 transition hover:bg-blue-500/10 hover:text-blue-400"
             title="Edit"
           >
             <Pencil size={16} />
@@ -579,7 +615,9 @@ function GoalCard({
             Progress
           </p>
 
-          <p className="mt-1 text-lg font-bold">
+          <p
+            className={`mt-1 text-lg font-bold ${theme.amount}`}
+          >
             Rs. {current.toLocaleString()}
           </p>
 
@@ -604,7 +642,7 @@ function GoalCard({
       <div className="mb-2 h-2 overflow-hidden rounded-full bg-white/10">
 
         <div
-          className="h-full rounded-full bg-white transition-all duration-500"
+          className={`h-full rounded-full transition-all duration-500 ${theme.progress}`}
           style={{
             width: `${Math.min(
               progress,
@@ -617,7 +655,9 @@ function GoalCard({
 
       <div className="mb-5 flex items-center justify-between text-xs">
 
-        <span className="text-white/40">
+        <span
+          className={theme.amount}
+        >
           {progress}%
         </span>
 
@@ -643,7 +683,13 @@ function GoalCard({
               Deadline
             </p>
 
-            <p className="mt-1 text-xs text-white/50">
+            <p
+              className={`mt-1 text-xs ${
+                isOverdue
+                  ? "text-red-400"
+                  : "text-white/50"
+              }`}
+            >
               {formatDate(goal.deadline)}
             </p>
 
@@ -686,7 +732,7 @@ function StatusBadge({
   }
 
   return (
-    <div className="flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs text-white/50">
+    <div className="flex items-center gap-2 rounded-xl bg-blue-500/10 px-3 py-2 text-xs text-blue-400">
       <Clock3 size={14} />
       In Progress
     </div>
@@ -707,7 +753,7 @@ function GoalModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
 
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-white/10 bg-[#111] p-6 shadow-2xl">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-blue-400/10 bg-[#111] p-6 shadow-2xl">
 
         {/* MODAL HEADER */}
 
@@ -731,7 +777,7 @@ function GoalModal({
 
           <button
             onClick={onClose}
-            className="rounded-xl p-2 text-white/40 hover:bg-white/10 hover:text-white"
+            className="rounded-xl p-2 text-white/40 transition hover:bg-red-500/10 hover:text-red-400"
           >
             <X size={20} />
           </button>
@@ -745,8 +791,6 @@ function GoalModal({
           className="space-y-4"
         >
 
-          {/* TITLE */}
-
           <Input
             label="Goal Name"
             name="title"
@@ -755,8 +799,6 @@ function GoalModal({
             placeholder="e.g. New Camera"
             required
           />
-
-          {/* DESCRIPTION */}
 
           <div>
 
@@ -770,12 +812,10 @@ function GoalModal({
               onChange={onChange}
               placeholder="What is this goal for?"
               rows={3}
-              className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/20 focus:border-white/20"
+              className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/20 transition focus:border-blue-400/40"
             />
 
           </div>
-
-          {/* AMOUNTS */}
 
           <div className="grid gap-4 sm:grid-cols-2">
 
@@ -802,8 +842,6 @@ function GoalModal({
 
           </div>
 
-          {/* CATEGORY */}
-
           <div>
 
             <label className="mb-2 block text-xs text-white/50">
@@ -814,7 +852,7 @@ function GoalModal({
               name="category"
               value={form.category}
               onChange={onChange}
-              className="w-full rounded-2xl border border-white/10 bg-[#171717] px-4 py-3 text-sm text-white outline-none focus:border-white/20"
+              className="w-full rounded-2xl border border-white/10 bg-[#171717] px-4 py-3 text-sm text-white outline-none transition focus:border-blue-400/40"
             >
 
               {CATEGORIES.map(
@@ -832,8 +870,6 @@ function GoalModal({
 
           </div>
 
-          {/* DEADLINE */}
-
           <div>
 
             <label className="mb-2 block text-xs text-white/50">
@@ -845,26 +881,24 @@ function GoalModal({
               name="deadline"
               value={form.deadline}
               onChange={onChange}
-              className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none focus:border-white/20"
+              className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition focus:border-blue-400/40"
             />
 
           </div>
-
-          {/* BUTTONS */}
 
           <div className="flex gap-3 pt-3">
 
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-medium text-white/60 hover:bg-white/[0.08] hover:text-white"
+              className="flex-1 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-medium text-white/60 transition hover:bg-white/[0.08] hover:text-white"
             >
               Cancel
             </button>
 
             <button
               type="submit"
-              className="flex-1 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black hover:bg-white/90"
+              className="flex-1 rounded-2xl bg-blue-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-400"
             >
               {editingGoal
                 ? "Save Changes"
@@ -898,7 +932,7 @@ function Input({
 
       <input
         {...props}
-        className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/20 focus:border-white/20"
+        className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/20 transition focus:border-blue-400/40"
       />
 
     </div>
@@ -913,11 +947,42 @@ function StatCard({
   icon,
   title,
   value,
+  color = "blue",
 }) {
-  return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
+  const colors = {
+    blue: {
+      icon: "bg-blue-500/10 text-blue-400",
+      border:
+        "border-blue-400/10 hover:border-blue-400/30",
+      value: "text-blue-400",
+    },
 
-      <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10">
+    green: {
+      icon: "bg-green-500/10 text-green-400",
+      border:
+        "border-green-400/10 hover:border-green-400/30",
+      value: "text-green-400",
+    },
+
+    red: {
+      icon: "bg-red-500/10 text-red-400",
+      border:
+        "border-red-400/10 hover:border-red-400/30",
+      value: "text-red-400",
+    },
+  };
+
+  const theme =
+    colors[color] || colors.blue;
+
+  return (
+    <div
+      className={`rounded-3xl border bg-white/[0.04] p-5 backdrop-blur-xl transition ${theme.border}`}
+    >
+
+      <div
+        className={`mb-5 flex h-11 w-11 items-center justify-center rounded-2xl ${theme.icon}`}
+      >
         {icon}
       </div>
 
@@ -925,7 +990,9 @@ function StatCard({
         {title}
       </p>
 
-      <p className="mt-2 text-2xl font-bold">
+      <p
+        className={`mt-2 text-2xl font-bold ${theme.value}`}
+      >
         {value}
       </p>
 
@@ -942,9 +1009,9 @@ function EmptyGoals({
   onAdd,
 }) {
   return (
-    <div className="rounded-3xl border border-dashed border-white/10 bg-white/[0.02] px-6 py-16 text-center">
+    <div className="rounded-3xl border border-dashed border-blue-400/10 bg-white/[0.02] px-6 py-16 text-center">
 
-      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10">
+      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-400">
         <Target size={24} />
       </div>
 
@@ -963,7 +1030,7 @@ function EmptyGoals({
       {!search && (
         <button
           onClick={onAdd}
-          className="mt-5 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black"
+          className="mt-5 rounded-2xl bg-blue-500 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-400"
         >
           Create Goal
         </button>

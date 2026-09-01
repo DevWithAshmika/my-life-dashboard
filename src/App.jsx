@@ -42,7 +42,7 @@ export default function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   // =========================================================
-  // DARK MODE
+  // THEME
   // =========================================================
 
   const [darkMode, setDarkMode] = useState(() => {
@@ -51,6 +51,28 @@ export default function App() {
     );
 
     return savedTheme !== "light";
+  });
+
+  // =========================================================
+  // DASHBOARD COLOR SYSTEM
+  //
+  // green | red | blue
+  // =========================================================
+
+  const [accentColor, setAccentColor] = useState(() => {
+    const savedColor = localStorage.getItem(
+      "my-life-dashboard-color"
+    );
+
+    if (
+      savedColor === "green" ||
+      savedColor === "red" ||
+      savedColor === "blue"
+    ) {
+      return savedColor;
+    }
+
+    return "green";
   });
 
   // =========================================================
@@ -84,6 +106,24 @@ export default function App() {
       );
     }
   }, [darkMode]);
+
+  // =========================================================
+  // APPLY DASHBOARD COLOR
+  // =========================================================
+
+  useEffect(() => {
+    const root = document.documentElement;
+
+    root.setAttribute(
+      "data-dashboard-color",
+      accentColor
+    );
+
+    localStorage.setItem(
+      "my-life-dashboard-color",
+      accentColor
+    );
+  }, [accentColor]);
 
   // =========================================================
   // FIREBASE AUTH
@@ -123,11 +163,13 @@ export default function App() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-black text-white">
         <div className="text-center">
+
           <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-white" />
 
           <p className="text-sm text-white/40">
             Checking authentication...
           </p>
+
         </div>
       </div>
     );
@@ -153,7 +195,10 @@ export default function App() {
           : "bg-[#f5f5f7] text-black"
       }`}
     >
-      {/* SIDEBAR */}
+
+      {/* =====================================================
+          SIDEBAR
+      ====================================================== */}
 
       <Sidebar
         activePage={activePage}
@@ -162,102 +207,144 @@ export default function App() {
         mobileOpen={mobileOpen}
         setMobileOpen={setMobileOpen}
         darkMode={darkMode}
+        accentColor={accentColor}
       />
 
-      {/* MAIN */}
+      {/* =====================================================
+          MAIN
+      ====================================================== */}
 
       <main
         className={`min-h-screen transition-colors duration-300 lg:pl-64 ${
-          darkMode ? "bg-black" : "bg-[#f5f5f7]"
+          darkMode
+            ? "bg-black"
+            : "bg-[#f5f5f7]"
         }`}
       >
+
         <div className="mx-auto w-full max-w-[1800px] px-4 pb-24 pt-4 sm:px-6 lg:px-8 lg:pb-8">
-          {/* MOBILE NAV */}
+
+          {/* =================================================
+              MOBILE NAV
+          ================================================= */}
 
           <div className="mb-5 lg:hidden">
+
             <MobileNav
               user={user}
               activePage={activePage}
               setActivePage={handlePageChange}
-              onMenuClick={() => setMobileOpen(true)}
+              onMenuClick={() =>
+                setMobileOpen(true)
+              }
               darkMode={darkMode}
+              accentColor={accentColor}
             />
+
           </div>
 
-          {/* DASHBOARD */}
+          {/* =================================================
+              DASHBOARD
+          ================================================= */}
 
           {activePage === "dashboard" && (
             <Dashboard
               user={user}
               setActivePage={handlePageChange}
+              accentColor={accentColor}
             />
           )}
 
-          {/* FINANCE */}
+          {/* =================================================
+              FINANCE
+          ================================================= */}
 
           {activePage === "finance" && (
             <Finance user={user} />
           )}
 
-          {/* TASKS */}
+          {/* =================================================
+              TASKS
+          ================================================= */}
 
           {activePage === "tasks" && (
             <Tasks user={user} />
           )}
 
-          {/* GOALS */}
+          {/* =================================================
+              GOALS
+          ================================================= */}
 
           {activePage === "goals" && (
             <Goals user={user} />
           )}
 
-          {/* HABITS */}
+          {/* =================================================
+              HABITS
+          ================================================= */}
 
           {activePage === "habits" && (
             <Habits user={user} />
           )}
 
-          {/* FITNESS */}
+          {/* =================================================
+              FITNESS
+          ================================================= */}
 
           {activePage === "fitness" && (
             <Fitness user={user} />
           )}
 
-          {/* CALENDAR */}
+          {/* =================================================
+              CALENDAR
+          ================================================= */}
 
           {activePage === "calendar" && (
             <Calendar user={user} />
           )}
 
-          {/* TRAVEL */}
+          {/* =================================================
+              TRAVEL
+          ================================================= */}
 
           {activePage === "travel" && (
             <Travel user={user} />
           )}
 
-          {/* NOTES */}
+          {/* =================================================
+              NOTES
+          ================================================= */}
 
           {activePage === "notes" && (
             <Notes user={user} />
           )}
 
-          {/* ANALYTICS */}
+          {/* =================================================
+              ANALYTICS
+          ================================================= */}
 
           {activePage === "analytics" && (
             <Analytics user={user} />
           )}
 
-          {/* SETTINGS */}
+          {/* =================================================
+              SETTINGS
+          ================================================= */}
 
           {activePage === "settings" && (
             <Settings
               user={user}
               darkMode={darkMode}
               setDarkMode={setDarkMode}
+              accentColor={accentColor}
+              setAccentColor={setAccentColor}
             />
           )}
+
         </div>
+
       </main>
+
     </div>
   );
 }

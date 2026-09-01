@@ -43,13 +43,11 @@ const priorityConfig = {
     className:
       "border-blue-400/20 bg-blue-500/10 text-blue-300",
   },
-
   medium: {
     label: "Medium",
     className:
       "border-blue-400/20 bg-blue-500/15 text-blue-200",
   },
-
   high: {
     label: "High",
     className:
@@ -59,16 +57,13 @@ const priorityConfig = {
 
 function getToday() {
   const date = new Date();
-
   const offset = date.getTimezoneOffset();
 
   const localDate = new Date(
     date.getTime() - offset * 60000
   );
 
-  return localDate
-    .toISOString()
-    .split("T")[0];
+  return localDate.toISOString().split("T")[0];
 }
 
 function isOverdue(task) {
@@ -91,14 +86,11 @@ function formatDate(dateString) {
   if (!dateString) return "";
 
   try {
-    return new Intl.DateTimeFormat(
-      "en-LK",
-      {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      }
-    ).format(
+    return new Intl.DateTimeFormat("en-LK", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }).format(
       new Date(`${dateString}T00:00:00`)
     );
   } catch {
@@ -108,30 +100,19 @@ function formatDate(dateString) {
 
 export default function Tasks({ user }) {
   const [tasks, setTasks] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const [loading, setLoading] =
-    useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
 
-  const [showModal, setShowModal] =
-    useState(false);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("created");
 
-  const [editingTask, setEditingTask] =
-    useState(null);
-
-  const [search, setSearch] =
-    useState("");
-
-  const [filter, setFilter] =
-    useState("all");
-
-  const [sortBy, setSortBy] =
-    useState("created");
-
-  const [deletingId, setDeletingId] =
-    useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   // =========================================================
-  // FIRESTORE
+  // FIRESTORE LIVE DATA
   // =========================================================
 
   useEffect(() => {
@@ -148,21 +129,18 @@ export default function Tasks({ user }) {
       "tasks"
     );
 
-    const q = query(
+    const tasksQuery = query(
       tasksRef,
       orderBy("createdAt", "desc")
     );
 
     const unsubscribe = onSnapshot(
-      q,
+      tasksQuery,
       (snapshot) => {
-        const data =
-          snapshot.docs.map(
-            (item) => ({
-              id: item.id,
-              ...item.data(),
-            })
-          );
+        const data = snapshot.docs.map((item) => ({
+          id: item.id,
+          ...item.data(),
+        }));
 
         setTasks(data);
         setLoading(false);
@@ -198,33 +176,31 @@ export default function Tasks({ user }) {
         ),
         {
           completed: !task.completed,
-
-          completedAt:
-            !task.completed
-              ? serverTimestamp()
-              : null,
+          completedAt: !task.completed
+            ? serverTimestamp()
+            : null,
         }
       );
     } catch (error) {
-      console.error(error);
-
-      alert(
-        "Could not update task."
+      console.error(
+        "Toggle task error:",
+        error
       );
+
+      alert("Could not update task.");
     }
   }
 
   // =========================================================
-  // DELETE
+  // DELETE TASK
   // =========================================================
 
   async function deleteTask(taskId) {
     if (!user?.uid) return;
 
-    const confirmed =
-      window.confirm(
-        "Delete this task?\n\nThis action cannot be undone."
-      );
+    const confirmed = window.confirm(
+      "Delete this task?\n\nThis action cannot be undone."
+    );
 
     if (!confirmed) return;
 
@@ -241,18 +217,19 @@ export default function Tasks({ user }) {
         )
       );
     } catch (error) {
-      console.error(error);
-
-      alert(
-        "Could not delete task."
+      console.error(
+        "Delete task error:",
+        error
       );
+
+      alert("Could not delete task.");
     } finally {
       setDeletingId(null);
     }
   }
 
   // =========================================================
-  // MODALS
+  // OPEN ADD MODAL
   // =========================================================
 
   function openAddModal() {
@@ -260,9 +237,22 @@ export default function Tasks({ user }) {
     setShowModal(true);
   }
 
+  // =========================================================
+  // OPEN EDIT MODAL
+  // =========================================================
+
   function openEditModal(task) {
     setEditingTask(task);
     setShowModal(true);
+  }
+
+  // =========================================================
+  // CLOSE MODAL
+  // =========================================================
+
+  function closeModal() {
+    setShowModal(false);
+    setEditingTask(null);
   }
 
   // =========================================================
@@ -271,21 +261,17 @@ export default function Tasks({ user }) {
 
   async function saveTask(data) {
     if (!user?.uid) {
-      alert(
-        "You are not logged in."
-      );
-
+      alert("You are not logged in.");
       return;
     }
 
     try {
-      const tasksRef =
-        collection(
-          db,
-          "users",
-          user.uid,
-          "tasks"
-        );
+      const tasksRef = collection(
+        db,
+        "users",
+        user.uid,
+        "tasks"
+      );
 
       if (editingTask) {
         await updateDoc(
@@ -298,48 +284,34 @@ export default function Tasks({ user }) {
           ),
           {
             title: data.title,
-            description:
-              data.description,
-            priority:
-              data.priority,
-            dueDate:
-              data.dueDate,
+            description: data.description,
+            priority: data.priority,
+            dueDate: data.dueDate,
             tags: data.tags,
+            updatedAt: serverTimestamp(),
           }
         );
       } else {
-        await addDoc(
-          tasksRef,
-          {
-            title: data.title,
-
-            description:
-              data.description,
-
-            priority:
-              data.priority,
-
-            dueDate:
-              data.dueDate,
-
-            tags: data.tags,
-
-            completed: false,
-
-            createdAt:
-              serverTimestamp(),
-          }
-        );
+        await addDoc(tasksRef, {
+          title: data.title,
+          description: data.description,
+          priority: data.priority,
+          dueDate: data.dueDate,
+          tags: data.tags,
+          completed: false,
+          completedAt: null,
+          createdAt: serverTimestamp(),
+        });
       }
 
-      setShowModal(false);
-      setEditingTask(null);
+      closeModal();
     } catch (error) {
-      console.error(error);
-
-      alert(
-        "Could not save task."
+      console.error(
+        "Save task error:",
+        error
       );
+
+      alert("Could not save task.");
     }
   }
 
@@ -347,191 +319,136 @@ export default function Tasks({ user }) {
   // FILTER + SORT
   // =========================================================
 
-  const filteredTasks =
-    useMemo(() => {
-      let result =
-        tasks.filter(
-          (task) => {
-            const text = `
-              ${task.title || ""}
-              ${task.description || ""}
-              ${
-                Array.isArray(
-                  task.tags
-                )
-                  ? task.tags.join(" ")
-                  : ""
-              }
-            `.toLowerCase();
-
-            const matchesSearch =
-              text.includes(
-                search.toLowerCase()
-              );
-
-            if (!matchesSearch) {
-              return false;
-            }
-
-            if (
-              filter ===
-              "active"
-            ) {
-              return !task.completed;
-            }
-
-            if (
-              filter ===
-              "completed"
-            ) {
-              return task.completed;
-            }
-
-            if (
-              filter === "high"
-            ) {
-              return (
-                task.priority ===
-                  "high" &&
-                !task.completed
-              );
-            }
-
-            if (
-              filter === "today"
-            ) {
-              return isDueToday(
-                task
-              );
-            }
-
-            if (
-              filter ===
-              "overdue"
-            ) {
-              return isOverdue(
-                task
-              );
-            }
-
-            return true;
-          }
-        );
-
-      result = [...result].sort(
-        (a, b) => {
-          if (
-            sortBy === "due"
-          ) {
-            if (
-              !a.dueDate &&
-              !b.dueDate
-            ) {
-              return 0;
-            }
-
-            if (!a.dueDate) {
-              return 1;
-            }
-
-            if (!b.dueDate) {
-              return -1;
-            }
-
-            return a.dueDate.localeCompare(
-              b.dueDate
-            );
-          }
-
-          if (
-            sortBy ===
-            "priority"
-          ) {
-            const values = {
-              high: 3,
-              medium: 2,
-              low: 1,
-            };
-
-            return (
-              (values[
-                b.priority
-              ] || 0) -
-              (values[
-                a.priority
-              ] || 0)
-            );
-          }
-
-          if (
-            sortBy === "title"
-          ) {
-            return String(
-              a.title || ""
-            ).localeCompare(
-              String(
-                b.title || ""
-              )
-            );
-          }
-
-          return 0;
+  const filteredTasks = useMemo(() => {
+    let result = tasks.filter((task) => {
+      const text = `
+        ${task.title || ""}
+        ${task.description || ""}
+        ${
+          Array.isArray(task.tags)
+            ? task.tags.join(" ")
+            : ""
         }
+      `.toLowerCase();
+
+      const matchesSearch = text.includes(
+        search.toLowerCase()
       );
 
-      return result;
-    }, [
-      tasks,
-      search,
-      filter,
-      sortBy,
-    ]);
+      if (!matchesSearch) {
+        return false;
+      }
+
+      if (filter === "active") {
+        return !task.completed;
+      }
+
+      if (filter === "completed") {
+        return task.completed;
+      }
+
+      if (filter === "high") {
+        return (
+          task.priority === "high" &&
+          !task.completed
+        );
+      }
+
+      if (filter === "today") {
+        return isDueToday(task);
+      }
+
+      if (filter === "overdue") {
+        return isOverdue(task);
+      }
+
+      return true;
+    });
+
+    result = [...result].sort((a, b) => {
+      if (sortBy === "due") {
+        if (!a.dueDate && !b.dueDate) {
+          return 0;
+        }
+
+        if (!a.dueDate) {
+          return 1;
+        }
+
+        if (!b.dueDate) {
+          return -1;
+        }
+
+        return a.dueDate.localeCompare(
+          b.dueDate
+        );
+      }
+
+      if (sortBy === "priority") {
+        const values = {
+          high: 3,
+          medium: 2,
+          low: 1,
+        };
+
+        return (
+          (values[b.priority] || 0) -
+          (values[a.priority] || 0)
+        );
+      }
+
+      if (sortBy === "title") {
+        return String(
+          a.title || ""
+        ).localeCompare(
+          String(b.title || "")
+        );
+      }
+
+      return 0;
+    });
+
+    return result;
+  }, [
+    tasks,
+    search,
+    filter,
+    sortBy,
+  ]);
 
   // =========================================================
   // STATISTICS
   // =========================================================
 
-  const totalCount =
-    tasks.length;
+  const totalCount = tasks.length;
 
-  const completedCount =
-    tasks.filter(
-      (task) =>
-        task.completed
-    ).length;
+  const completedCount = tasks.filter(
+    (task) => task.completed
+  ).length;
 
-  const activeCount =
-    tasks.filter(
-      (task) =>
-        !task.completed
-    ).length;
+  const activeCount = tasks.filter(
+    (task) => !task.completed
+  ).length;
 
-  const highCount =
-    tasks.filter(
-      (task) =>
-        task.priority ===
-          "high" &&
-        !task.completed
-    ).length;
+  const highCount = tasks.filter(
+    (task) =>
+      task.priority === "high" &&
+      !task.completed
+  ).length;
 
-  const overdueCount =
-    tasks.filter(
-      (task) =>
-        isOverdue(task)
-    ).length;
+  const overdueCount = tasks.filter(
+    (task) => isOverdue(task)
+  ).length;
 
-  const todayCount =
-    tasks.filter(
-      (task) =>
-        isDueToday(task)
-    ).length;
+  const todayCount = tasks.filter(
+    (task) => isDueToday(task)
+  ).length;
 
   const progress =
     totalCount === 0
       ? 0
       : Math.round(
-          (completedCount /
-            totalCount) *
+          (completedCount / totalCount) *
             100
         );
 
@@ -543,20 +460,16 @@ export default function Tasks({ user }) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center text-white">
         <div className="text-center">
-
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-blue-400/20 bg-blue-500/10 backdrop-blur-xl">
-
             <Loader2
               size={22}
               className="animate-spin text-blue-300"
             />
-
           </div>
 
           <p className="mt-4 text-sm text-white/40">
             Loading tasks...
           </p>
-
         </div>
       </div>
     );
@@ -569,26 +482,18 @@ export default function Tasks({ user }) {
   return (
     <div className="min-h-screen pb-24 text-white sm:pb-0">
 
-      {/* =====================================================
-          HEADER
-      ====================================================== */}
+      {/* HEADER */}
 
       <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-
         <div>
-
           <div className="flex items-center gap-2">
-
             <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-blue-400/20 bg-blue-500/10 text-blue-300">
-
               <ListTodo size={18} />
-
             </div>
 
             <p className="text-sm text-blue-300/70">
               Productivity
             </p>
-
           </div>
 
           <h1 className="mt-2 text-3xl font-bold tracking-tight">
@@ -598,7 +503,6 @@ export default function Tasks({ user }) {
           <p className="mt-2 text-sm text-white/30">
             Organize your day and get things done.
           </p>
-
         </div>
 
         <button
@@ -609,92 +513,57 @@ export default function Tasks({ user }) {
           <Plus size={18} />
           Add Task
         </button>
-
       </div>
 
-      {/* =====================================================
-          STATS
-      ====================================================== */}
+      {/* STATS */}
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
-
         <Stat
-          icon={
-            <ListTodo
-              size={18}
-            />
-          }
+          icon={<ListTodo size={18} />}
           title="Total"
           value={totalCount}
           iconClass="bg-blue-500/10 text-blue-300"
         />
 
         <Stat
-          icon={
-            <Circle
-              size={18}
-            />
-          }
+          icon={<Circle size={18} />}
           title="Active"
           value={activeCount}
           iconClass="bg-blue-500/10 text-blue-300"
         />
 
         <Stat
-          icon={
-            <CheckCircle2
-              size={18}
-            />
-          }
+          icon={<CheckCircle2 size={18} />}
           title="Completed"
           value={completedCount}
           iconClass="bg-green-500/10 text-green-300"
         />
 
         <Stat
-          icon={
-            <Flag
-              size={18}
-            />
-          }
+          icon={<Flag size={18} />}
           title="High Priority"
           value={highCount}
           iconClass="bg-red-500/10 text-red-300"
         />
 
         <Stat
-          icon={
-            <AlertCircle
-              size={18}
-            />
-          }
+          icon={<AlertCircle size={18} />}
           title="Overdue"
           value={overdueCount}
           iconClass="bg-red-500/10 text-red-300"
         />
-
       </div>
 
-      {/* =====================================================
-          PROGRESS
-      ====================================================== */}
+      {/* PROGRESS */}
 
       <div className="mb-6 rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-xl shadow-black/10 backdrop-blur-2xl">
-
         <div className="flex items-center justify-between">
-
           <div className="flex items-center gap-3">
-
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-500/10 text-green-300">
-
-              <CheckCheck
-                size={19}
-              />
-
+              <CheckCheck size={19} />
             </div>
 
             <div>
-
               <p className="font-medium">
                 Task Progress
               </p>
@@ -703,13 +572,10 @@ export default function Tasks({ user }) {
                 {completedCount} of{" "}
                 {totalCount} completed
               </p>
-
             </div>
-
           </div>
 
           <div className="text-right">
-
             <p className="text-xl font-bold text-green-300">
               {progress}%
             </p>
@@ -717,34 +583,25 @@ export default function Tasks({ user }) {
             <p className="text-[10px] text-white/25">
               completed
             </p>
-
           </div>
-
         </div>
 
         <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
-
           <div
             className="h-full rounded-full bg-gradient-to-r from-blue-500 via-blue-400 to-green-400 transition-all duration-500"
             style={{
               width: `${progress}%`,
             }}
           />
-
         </div>
-
       </div>
 
-      {/* =====================================================
-          SEARCH
-      ====================================================== */}
+      {/* SEARCH + FILTER + SORT */}
 
       <div className="mb-6 rounded-3xl border border-white/10 bg-white/[0.035] p-4 backdrop-blur-2xl">
-
         <div className="flex flex-col gap-3 lg:flex-row">
 
           <div className="relative flex-1">
-
             <Search
               size={17}
               className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-300/40"
@@ -761,13 +618,9 @@ export default function Tasks({ user }) {
               placeholder="Search tasks, descriptions or tags..."
               className="w-full rounded-2xl border border-white/10 bg-white/[0.045] py-3 pl-10 pr-4 text-sm outline-none transition placeholder:text-white/20 focus:border-blue-400/30 focus:bg-blue-500/[0.04]"
             />
-
           </div>
 
-          {/* FILTER */}
-
           <div className="flex items-center gap-2">
-
             <Filter
               size={16}
               className="hidden text-blue-300/40 sm:block"
@@ -782,7 +635,6 @@ export default function Tasks({ user }) {
               }
               className="flex-1 rounded-2xl border border-white/10 bg-[#111] px-4 py-3 text-sm outline-none focus:border-blue-400/30 sm:flex-none"
             >
-
               <option value="all">
                 All Tasks
               </option>
@@ -806,15 +658,10 @@ export default function Tasks({ user }) {
               <option value="overdue">
                 Overdue
               </option>
-
             </select>
-
           </div>
 
-          {/* SORT */}
-
           <div className="flex items-center gap-2">
-
             <ArrowUpDown
               size={16}
               className="hidden text-blue-300/40 sm:block"
@@ -829,7 +676,6 @@ export default function Tasks({ user }) {
               }
               className="flex-1 rounded-2xl border border-white/10 bg-[#111] px-4 py-3 text-sm outline-none focus:border-blue-400/30 sm:flex-none"
             >
-
               <option value="created">
                 Newest
               </option>
@@ -845,99 +691,62 @@ export default function Tasks({ user }) {
               <option value="title">
                 A-Z
               </option>
-
             </select>
-
           </div>
 
         </div>
-
       </div>
 
-      {/* =====================================================
-          QUICK FILTERS
-      ====================================================== */}
+      {/* QUICK FILTERS */}
 
       <div className="mb-5 flex gap-2 overflow-x-auto pb-1">
-
         <QuickFilter
-          active={
-            filter === "all"
-          }
-          onClick={() =>
-            setFilter("all")
-          }
+          active={filter === "all"}
+          onClick={() => setFilter("all")}
           label={`All ${totalCount}`}
           color="blue"
         />
 
         <QuickFilter
-          active={
-            filter === "active"
-          }
-          onClick={() =>
-            setFilter("active")
-          }
+          active={filter === "active"}
+          onClick={() => setFilter("active")}
           label={`Active ${activeCount}`}
           color="blue"
         />
 
         <QuickFilter
-          active={
-            filter === "today"
-          }
-          onClick={() =>
-            setFilter("today")
-          }
+          active={filter === "today"}
+          onClick={() => setFilter("today")}
           label={`Today ${todayCount}`}
           color="blue"
         />
 
         <QuickFilter
-          active={
-            filter === "completed"
-          }
+          active={filter === "completed"}
           onClick={() =>
-            setFilter(
-              "completed"
-            )
+            setFilter("completed")
           }
           label={`Completed ${completedCount}`}
           color="green"
         />
 
         <QuickFilter
-          active={
-            filter === "overdue"
-          }
+          active={filter === "overdue"}
           onClick={() =>
-            setFilter(
-              "overdue"
-            )
+            setFilter("overdue")
           }
           label={`Overdue ${overdueCount}`}
           color="red"
         />
-
       </div>
 
-      {/* =====================================================
-          TASK LIST
-      ====================================================== */}
+      {/* TASK LIST */}
 
       <div className="space-y-3">
-
-        {filteredTasks.length ===
-        0 ? (
-
+        {filteredTasks.length === 0 ? (
           <div className="rounded-3xl border border-white/10 bg-white/[0.035] px-5 py-16 text-center backdrop-blur-2xl">
-
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-blue-400/10 bg-blue-500/10 text-blue-300/60">
-
-              <ListTodo
-                size={25}
-              />
-
+              <ListTodo size={25} />
             </div>
 
             <p className="mt-4 font-medium">
@@ -950,91 +759,60 @@ export default function Tasks({ user }) {
 
             <button
               type="button"
-              onClick={
-                openAddModal
-              }
+              onClick={openAddModal}
               className="mt-5 rounded-xl bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20"
             >
               Add Task
             </button>
-
           </div>
-
         ) : (
-
-          filteredTasks.map(
-            (task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                onToggle={() =>
-                  toggleTask(
-                    task
-                  )
-                }
-                onEdit={() =>
-                  openEditModal(
-                    task
-                  )
-                }
-                onDelete={() =>
-                  deleteTask(
-                    task.id
-                  )
-                }
-                deleting={
-                  deletingId ===
-                  task.id
-                }
-              />
-            )
-          )
-
+          filteredTasks.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              onToggle={() =>
+                toggleTask(task)
+              }
+              onEdit={() =>
+                openEditModal(task)
+              }
+              onDelete={() =>
+                deleteTask(task.id)
+              }
+              deleting={
+                deletingId === task.id
+              }
+            />
+          ))
         )}
-
       </div>
 
-      {/* =====================================================
-          MOBILE ADD BUTTON
-      ====================================================== */}
+      {/* MOBILE ADD BUTTON */}
 
       <button
         type="button"
-        onClick={
-          openAddModal
-        }
+        onClick={openAddModal}
         aria-label="Add task"
         className="fixed bottom-24 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-blue-500 text-white shadow-2xl shadow-blue-500/30 transition hover:bg-blue-400 active:scale-90 sm:hidden"
       >
-
         <Plus
           size={25}
           strokeWidth={2.5}
         />
-
       </button>
 
-      {/* =====================================================
-          MODAL
-      ====================================================== */}
+      {/* MODAL */}
 
       {showModal && (
         <TaskModal
           task={editingTask}
-          onClose={() => {
-            setShowModal(false);
-            setEditingTask(
-              null
-            );
-          }}
+          onClose={closeModal}
           onSave={saveTask}
         />
       )}
-
     </div>
   );
 }
-
 
 /* ===========================================================
    STAT
@@ -1048,9 +826,7 @@ function Stat({
 }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 backdrop-blur-2xl transition hover:bg-white/[0.055]">
-
       <div className="flex items-center gap-3">
-
         <div
           className={`flex h-9 w-9 items-center justify-center rounded-xl ${iconClass}`}
         >
@@ -1058,7 +834,6 @@ function Stat({
         </div>
 
         <div>
-
           <p className="text-[11px] text-white/30">
             {title}
           </p>
@@ -1066,15 +841,11 @@ function Stat({
           <p className="mt-1 text-xl font-bold">
             {value}
           </p>
-
         </div>
-
       </div>
-
     </div>
   );
 }
-
 
 /* ===========================================================
    QUICK FILTER
@@ -1112,7 +883,6 @@ function QuickFilter({
   );
 }
 
-
 /* ===========================================================
    TASK CARD
 =========================================================== */
@@ -1124,16 +894,11 @@ function TaskCard({
   onDelete,
   deleting,
 }) {
-  const overdue =
-    isOverdue(task);
-
-  const today =
-    isDueToday(task);
+  const overdue = isOverdue(task);
+  const today = isDueToday(task);
 
   const priority =
-    priorityConfig[
-      task.priority
-    ] ||
+    priorityConfig[task.priority] ||
     priorityConfig.medium;
 
   return (
@@ -1150,7 +915,6 @@ function TaskCard({
           : ""
       }`}
     >
-
       <div className="flex gap-3">
 
         {/* CHECKBOX */}
@@ -1169,13 +933,9 @@ function TaskCard({
               : "border-blue-300/20 hover:border-blue-300/50 hover:bg-blue-500/10"
           }`}
         >
-
           {task.completed && (
-            <Check
-              size={14}
-            />
+            <Check size={14} />
           )}
-
         </button>
 
         {/* CONTENT */}
@@ -1202,31 +962,24 @@ function TaskCard({
 
             {overdue && (
               <span className="flex items-center gap-1 rounded-full border border-red-400/20 bg-red-500/10 px-2 py-1 text-[10px] text-red-300">
-                <AlertCircle
-                  size={11}
-                />
+                <AlertCircle size={11} />
                 Overdue
               </span>
             )}
 
             {today && (
               <span className="flex items-center gap-1 rounded-full border border-blue-400/20 bg-blue-500/10 px-2 py-1 text-[10px] text-blue-300">
-                <Clock
-                  size={11}
-                />
+                <Clock size={11} />
                 Today
               </span>
             )}
 
             {task.completed && (
               <span className="flex items-center gap-1 rounded-full border border-green-400/20 bg-green-500/10 px-2 py-1 text-[10px] text-green-300">
-                <Check
-                  size={11}
-                />
+                <Check size={11} />
                 Completed
               </span>
             )}
-
           </div>
 
           {/* DESCRIPTION */}
@@ -1239,30 +992,20 @@ function TaskCard({
 
           {/* TAGS */}
 
-          {Array.isArray(
-            task.tags
-          ) &&
-            task.tags.length >
-              0 && (
+          {Array.isArray(task.tags) &&
+            task.tags.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-1.5">
-
                 {task.tags.map(
-                  (
-                    tag,
-                    index
-                  ) => (
+                  (tag, index) => (
                     <span
                       key={`${tag}-${index}`}
                       className="flex items-center gap-1 rounded-lg border border-blue-400/10 bg-blue-500/[0.05] px-2 py-1 text-[10px] text-blue-200/50"
                     >
-                      <Tag
-                        size={10}
-                      />
+                      <Tag size={10} />
                       {tag}
                     </span>
                   )
                 )}
-
               </div>
             )}
 
@@ -1280,10 +1023,7 @@ function TaskCard({
                   : "text-white/30"
               }`}
             >
-
-              <CalendarDays
-                size={13}
-              />
+              <CalendarDays size={13} />
 
               <span>
                 {overdue
@@ -1293,10 +1033,8 @@ function TaskCard({
                   task.dueDate
                 )}
               </span>
-
             </div>
           )}
-
         </div>
 
         {/* ACTIONS */}
@@ -1309,9 +1047,7 @@ function TaskCard({
             aria-label="Edit task"
             className="rounded-xl p-2 text-white/25 transition hover:bg-blue-500/10 hover:text-blue-300"
           >
-            <Pencil
-              size={15}
-            />
+            <Pencil size={15} />
           </button>
 
           <button
@@ -1321,28 +1057,21 @@ function TaskCard({
             aria-label="Delete task"
             className="rounded-xl p-2 text-white/25 transition hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"
           >
-
             {deleting ? (
               <Loader2
                 size={15}
                 className="animate-spin"
               />
             ) : (
-              <Trash2
-                size={15}
-              />
+              <Trash2 size={15} />
             )}
-
           </button>
 
         </div>
-
       </div>
-
     </div>
   );
 }
-
 
 /* ===========================================================
    TASK MODAL
@@ -1353,78 +1082,59 @@ function TaskModal({
   onClose,
   onSave,
 }) {
-  const [title, setTitle] =
-    useState(
-      task?.title || ""
-    );
+  const [title, setTitle] = useState(
+    task?.title || ""
+  );
 
   const [description, setDescription] =
     useState(
-      task?.description ||
-        ""
+      task?.description || ""
     );
 
   const [priority, setPriority] =
     useState(
-      task?.priority ||
-        "medium"
+      task?.priority || "medium"
     );
 
-  const [dueDate, setDueDate] =
-    useState(
-      task?.dueDate || ""
-    );
+  const [dueDate, setDueDate] = useState(
+    task?.dueDate || ""
+  );
 
   const [tagsText, setTagsText] =
     useState(
-      Array.isArray(
-        task?.tags
-      )
-        ? task.tags.join(
-            ", "
-          )
+      Array.isArray(task?.tags)
+        ? task.tags.join(", ")
         : ""
     );
 
   const [saving, setSaving] =
     useState(false);
 
-  async function submit(
-    event
-  ) {
+  async function submit(event) {
     event.preventDefault();
 
     if (!title.trim()) {
       alert(
         "Please enter a task title."
       );
-
       return;
     }
 
-    const tags =
-      tagsText
-        .split(",")
-        .map((tag) =>
-          tag.trim()
-        )
-        .filter(Boolean)
-        .slice(0, 10);
+    const tags = tagsText
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean)
+      .slice(0, 10);
 
     setSaving(true);
 
     try {
       await onSave({
-        title:
-          title.trim(),
-
+        title: title.trim(),
         description:
           description.trim(),
-
         priority,
-
         dueDate,
-
         tags,
       });
     } finally {
@@ -1435,9 +1145,7 @@ function TaskModal({
   return (
     <div
       className="fixed inset-0 z-[100] flex items-end justify-center bg-black/75 p-0 backdrop-blur-md sm:items-center sm:p-4"
-      onMouseDown={(
-        event
-      ) => {
+      onMouseDown={(event) => {
         if (
           event.target ===
             event.currentTarget &&
@@ -1447,7 +1155,6 @@ function TaskModal({
         }
       }}
     >
-
       <div className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl border border-blue-400/10 bg-[#101010]/95 shadow-2xl backdrop-blur-2xl sm:max-w-lg sm:rounded-3xl">
 
         {/* HEADER */}
@@ -1455,21 +1162,14 @@ function TaskModal({
         <div className="flex shrink-0 items-center justify-between border-b border-white/[0.06] p-5 sm:p-6">
 
           <div>
-
             <div className="flex items-center gap-2">
-
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10 text-blue-300">
-
-                <ListTodo
-                  size={15}
-                />
-
+                <ListTodo size={15} />
               </div>
 
               <p className="text-xs text-blue-300/60">
                 Productivity
               </p>
-
             </div>
 
             <h2 className="mt-2 text-xl font-semibold">
@@ -1477,7 +1177,6 @@ function TaskModal({
                 ? "Edit Task"
                 : "New Task"}
             </h2>
-
           </div>
 
           <button
@@ -1486,17 +1185,13 @@ function TaskModal({
             disabled={saving}
             className="rounded-xl bg-white/[0.06] p-2 text-white/50 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
           >
-            <X
-              size={18}
-            />
+            <X size={18} />
           </button>
-
         </div>
 
         {/* FORM */}
 
         <div className="overflow-y-auto p-5 sm:p-6">
-
           <form
             onSubmit={submit}
             className="space-y-4"
@@ -1505,7 +1200,6 @@ function TaskModal({
             {/* TITLE */}
 
             <div>
-
               <label className="mb-2 block text-xs text-white/40">
                 Task
               </label>
@@ -1513,12 +1207,9 @@ function TaskModal({
               <input
                 type="text"
                 value={title}
-                onChange={(
-                  event
-                ) =>
+                onChange={(event) =>
                   setTitle(
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
                 placeholder="e.g. Finish website"
@@ -1526,27 +1217,20 @@ function TaskModal({
                 autoFocus
                 className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-4 py-3 text-sm outline-none transition placeholder:text-white/20 focus:border-blue-400/30 focus:bg-blue-500/[0.03] disabled:opacity-50"
               />
-
             </div>
 
             {/* DESCRIPTION */}
 
             <div>
-
               <label className="mb-2 block text-xs text-white/40">
                 Description
               </label>
 
               <textarea
-                value={
-                  description
-                }
-                onChange={(
-                  event
-                ) =>
+                value={description}
+                onChange={(event) =>
                   setDescription(
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
                 placeholder="Optional description"
@@ -1554,33 +1238,27 @@ function TaskModal({
                 disabled={saving}
                 className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.045] px-4 py-3 text-sm outline-none transition placeholder:text-white/20 focus:border-blue-400/30 disabled:opacity-50"
               />
-
             </div>
 
             {/* PRIORITY */}
 
             <div>
-
               <label className="mb-2 block text-xs text-white/40">
                 Priority
               </label>
 
               <div className="grid grid-cols-3 gap-2">
-
                 {priorities.map(
                   (item) => (
                     <button
                       key={item}
                       type="button"
                       onClick={() =>
-                        setPriority(
-                          item
-                        )
+                        setPriority(item)
                       }
                       disabled={saving}
                       className={`flex items-center justify-center gap-1.5 rounded-2xl border py-3 text-xs capitalize transition ${
-                        priority ===
-                        item
+                        priority === item
                           ? item ===
                             "high"
                             ? "border-red-400/30 bg-red-500 text-white"
@@ -1588,31 +1266,22 @@ function TaskModal({
                           : "border-white/10 bg-white/[0.04] text-white/40 hover:bg-white/[0.07]"
                       }`}
                     >
-
-                      <Flag
-                        size={13}
-                      />
-
+                      <Flag size={13} />
                       {item}
-
                     </button>
                   )
                 )}
-
               </div>
-
             </div>
 
             {/* TAGS */}
 
             <div>
-
               <label className="mb-2 block text-xs text-white/40">
                 Tags
               </label>
 
               <div className="relative">
-
                 <Tag
                   size={16}
                   className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-300/30"
@@ -1620,55 +1289,41 @@ function TaskModal({
 
                 <input
                   type="text"
-                  value={
-                    tagsText
-                  }
-                  onChange={(
-                    event
-                  ) =>
+                  value={tagsText}
+                  onChange={(event) =>
                     setTagsText(
-                      event.target
-                        .value
+                      event.target.value
                     )
                   }
                   placeholder="work, personal, urgent"
                   disabled={saving}
                   className="w-full rounded-2xl border border-white/10 bg-white/[0.045] py-3 pl-10 pr-4 text-sm outline-none transition placeholder:text-white/20 focus:border-blue-400/30 disabled:opacity-50"
                 />
-
               </div>
 
               <p className="mt-1.5 text-[10px] text-white/20">
                 Separate tags with commas.
               </p>
-
             </div>
 
             {/* DATE */}
 
             <div>
-
               <label className="mb-2 block text-xs text-white/40">
                 Due Date
               </label>
 
               <input
                 type="date"
-                value={
-                  dueDate
-                }
-                onChange={(
-                  event
-                ) =>
+                value={dueDate}
+                onChange={(event) =>
                   setDueDate(
-                    event.target
-                      .value
+                    event.target.value
                   )
                 }
                 disabled={saving}
                 className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-4 py-3 text-sm outline-none focus:border-blue-400/30 disabled:opacity-50"
               />
-
             </div>
 
             {/* SUBMIT */}
@@ -1678,14 +1333,12 @@ function TaskModal({
               disabled={saving}
               className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-500 py-3.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-400 disabled:opacity-50"
             >
-
               {saving ? (
                 <>
                   <Loader2
                     size={16}
                     className="animate-spin"
                   />
-
                   Saving...
                 </>
               ) : (
@@ -1695,15 +1348,11 @@ function TaskModal({
                     : "Create Task"}
                 </>
               )}
-
             </button>
 
           </form>
-
         </div>
-
       </div>
-
     </div>
   );
 }

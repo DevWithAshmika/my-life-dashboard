@@ -34,6 +34,26 @@ import {
 import { db } from "../firebase/config";
 import Loading from "../components/Loading";
 
+// ===========================================================
+// COLORS
+// ===========================================================
+
+const COLORS = {
+  green: "#22c55e",
+  red: "#ef4444",
+  blue: "#3b82f6",
+};
+
+const CHART_COLORS = [
+  COLORS.blue,
+  COLORS.green,
+  COLORS.red,
+];
+
+// ===========================================================
+// ANALYTICS
+// ===========================================================
+
 export default function Analytics({ user }) {
   const [finance, setFinance] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -66,10 +86,12 @@ export default function Analytics({ user }) {
     const unsubscribe = onSnapshot(
       financeRef,
       (snapshot) => {
-        const records = snapshot.docs.map((item) => ({
-          id: item.id,
-          ...item.data(),
-        }));
+        const records = snapshot.docs.map(
+          (item) => ({
+            id: item.id,
+            ...item.data(),
+          })
+        );
 
         setFinance(records);
         setLoading(false);
@@ -85,7 +107,7 @@ export default function Analytics({ user }) {
     );
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user?.uid]);
 
   // =========================================================
   // SELECTED DATE RANGE
@@ -95,17 +117,22 @@ export default function Analytics({ user }) {
     return finance.filter((item) => {
       if (!item.date) return false;
 
-      const date = new Date(`${item.date}T00:00:00`);
+      const date = new Date(
+        `${item.date}T00:00:00`
+      );
 
       if (period === "yearly") {
         return (
-          date.getFullYear() === currentYear
+          date.getFullYear() ===
+          currentYear
         );
       }
 
       return (
-        date.getFullYear() === currentYear &&
-        date.getMonth() === currentMonth
+        date.getFullYear() ===
+          currentYear &&
+        date.getMonth() ===
+          currentMonth
       );
     });
   }, [
@@ -124,7 +151,9 @@ export default function Analytics({ user }) {
     let expense = 0;
 
     filteredFinance.forEach((item) => {
-      const amount = Number(item.amount || 0);
+      const amount = Number(
+        item.amount || 0
+      );
 
       if (item.type === "income") {
         income += amount;
@@ -135,12 +164,15 @@ export default function Analytics({ user }) {
       }
     });
 
-    const balance = income - expense;
+    const balance =
+      income - expense;
 
     const savingsRate =
       income > 0
         ? Math.round(
-            ((income - expense) / income) * 100
+            ((income - expense) /
+              income) *
+              100
           )
         : 0;
 
@@ -153,43 +185,62 @@ export default function Analytics({ user }) {
   }, [filteredFinance]);
 
   // =========================================================
-  // DAILY DATA FOR MONTH
+  // MONTHLY CHART DATA
   // =========================================================
 
   const monthlyChartData = useMemo(() => {
-    const daysInMonth = new Date(
-      currentYear,
-      currentMonth + 1,
-      0
-    ).getDate();
+    const daysInMonth =
+      new Date(
+        currentYear,
+        currentMonth + 1,
+        0
+      ).getDate();
 
     const data = [];
 
-    for (let day = 1; day <= daysInMonth; day++) {
+    for (
+      let day = 1;
+      day <= daysInMonth;
+      day++
+    ) {
       const dateString =
         `${currentYear}-${String(
           currentMonth + 1
-        ).padStart(2, "0")}-${String(day).padStart(
-          2,
-          "0"
-        )}`;
+        ).padStart(2, "0")}-${String(
+          day
+        ).padStart(2, "0")}`;
 
       let income = 0;
       let expense = 0;
 
-      filteredFinance.forEach((item) => {
-        if (item.date !== dateString) return;
+      filteredFinance.forEach(
+        (item) => {
+          if (
+            item.date !==
+            dateString
+          ) {
+            return;
+          }
 
-        const amount = Number(item.amount || 0);
+          const amount = Number(
+            item.amount || 0
+          );
 
-        if (item.type === "income") {
-          income += amount;
+          if (
+            item.type ===
+            "income"
+          ) {
+            income += amount;
+          }
+
+          if (
+            item.type ===
+            "expense"
+          ) {
+            expense += amount;
+          }
         }
-
-        if (item.type === "expense") {
-          expense += amount;
-        }
-      });
+      );
 
       data.push({
         day: String(day),
@@ -212,7 +263,11 @@ export default function Analytics({ user }) {
   const yearlyChartData = useMemo(() => {
     const data = [];
 
-    for (let month = 0; month < 12; month++) {
+    for (
+      let month = 0;
+      month < 12;
+      month++
+    ) {
       let income = 0;
       let expense = 0;
 
@@ -224,30 +279,42 @@ export default function Analytics({ user }) {
         );
 
         if (
-          date.getFullYear() !== currentYear ||
-          date.getMonth() !== month
+          date.getFullYear() !==
+            currentYear ||
+          date.getMonth() !==
+            month
         ) {
           return;
         }
 
-        const amount = Number(item.amount || 0);
+        const amount = Number(
+          item.amount || 0
+        );
 
-        if (item.type === "income") {
+        if (
+          item.type === "income"
+        ) {
           income += amount;
         }
 
-        if (item.type === "expense") {
+        if (
+          item.type === "expense"
+        ) {
           expense += amount;
         }
       });
 
-      const monthName = new Date(
-        currentYear,
-        month,
-        1
-      ).toLocaleDateString("en-US", {
-        month: "short",
-      });
+      const monthName =
+        new Date(
+          currentYear,
+          month,
+          1
+        ).toLocaleDateString(
+          "en-US",
+          {
+            month: "short",
+          }
+        );
 
       data.push({
         month: monthName,
@@ -257,7 +324,10 @@ export default function Analytics({ user }) {
     }
 
     return data;
-  }, [finance, currentYear]);
+  }, [
+    finance,
+    currentYear,
+  ]);
 
   // =========================================================
   // CATEGORY DATA
@@ -266,69 +336,99 @@ export default function Analytics({ user }) {
   const categoryData = useMemo(() => {
     const categories = {};
 
-    filteredFinance.forEach((item) => {
-      if (item.type !== "expense") return;
+    filteredFinance.forEach(
+      (item) => {
+        if (
+          item.type !==
+          "expense"
+        ) {
+          return;
+        }
 
-      const category =
-        item.category || "Other";
+        const category =
+          item.category ||
+          "Other";
 
-      const amount = Number(item.amount || 0);
+        const amount = Number(
+          item.amount || 0
+        );
 
-      categories[category] =
-        (categories[category] || 0) + amount;
-    });
+        categories[category] =
+          (categories[category] ||
+            0) + amount;
+      }
+    );
 
-    return Object.entries(categories)
-      .map(([name, value]) => ({
-        name,
-        value,
-      }))
-      .sort((a, b) => b.value - a.value);
+    return Object.entries(
+      categories
+    )
+      .map(
+        ([name, value]) => ({
+          name,
+          value,
+        })
+      )
+      .sort(
+        (a, b) =>
+          b.value - a.value
+      );
   }, [filteredFinance]);
 
   // =========================================================
   // AVERAGE DAILY EXPENSE
   // =========================================================
 
-  const averageDailyExpense = useMemo(() => {
-    if (period === "yearly") {
-      return totals.expense / 12;
-    }
+  const averageDailyExpense =
+    useMemo(() => {
+      if (period === "yearly") {
+        return totals.expense / 12;
+      }
 
-    const days =
-      new Date(
-        currentYear,
-        currentMonth + 1,
-        0
-      ).getDate();
+      const days =
+        new Date(
+          currentYear,
+          currentMonth + 1,
+          0
+        ).getDate();
 
-    return totals.expense / days;
-  }, [
-    totals.expense,
-    period,
-    currentYear,
-    currentMonth,
-  ]);
+      return (
+        totals.expense / days
+      );
+    }, [
+      totals.expense,
+      period,
+      currentYear,
+      currentMonth,
+    ]);
 
   // =========================================================
   // HIGHEST EXPENSE
   // =========================================================
 
   const highestExpense = useMemo(() => {
-    const expenses = filteredFinance.filter(
-      (item) => item.type === "expense"
-    );
+    const expenses =
+      filteredFinance.filter(
+        (item) =>
+          item.type ===
+          "expense"
+      );
 
     if (expenses.length === 0) {
       return null;
     }
 
-    return expenses.reduce((highest, item) => {
-      return Number(item.amount || 0) >
-        Number(highest.amount || 0)
-        ? item
-        : highest;
-    });
+    return expenses.reduce(
+      (highest, item) => {
+        return Number(
+          item.amount || 0
+        ) >
+          Number(
+            highest.amount || 0
+          )
+          ? item
+          : highest;
+      }
+    );
   }, [filteredFinance]);
 
   // =========================================================
@@ -338,7 +438,11 @@ export default function Analytics({ user }) {
   const sevenDayData = useMemo(() => {
     const data = [];
 
-    for (let i = 6; i >= 0; i--) {
+    for (
+      let i = 6;
+      i >= 0;
+      i--
+    ) {
       const date = new Date();
 
       date.setDate(
@@ -346,13 +450,18 @@ export default function Analytics({ user }) {
       );
 
       const dateString =
-        date.toISOString().split("T")[0];
+        date
+          .toISOString()
+          .split("T")[0];
 
       let income = 0;
       let expense = 0;
 
       finance.forEach((item) => {
-        if (item.date !== dateString) {
+        if (
+          item.date !==
+          dateString
+        ) {
           return;
         }
 
@@ -360,11 +469,17 @@ export default function Analytics({ user }) {
           item.amount || 0
         );
 
-        if (item.type === "income") {
+        if (
+          item.type ===
+          "income"
+        ) {
           income += amount;
         }
 
-        if (item.type === "expense") {
+        if (
+          item.type ===
+          "expense"
+        ) {
           expense += amount;
         }
       });
@@ -390,7 +505,9 @@ export default function Analytics({ user }) {
 
   if (loading) {
     return (
-      <Loading text="Loading analytics..." />
+      <Loading
+        text="Loading analytics..."
+      />
     );
   }
 
@@ -399,9 +516,11 @@ export default function Analytics({ user }) {
   // =========================================================
 
   return (
-    <div className="min-h-screen text-white">
+    <div className="min-h-screen pb-24 text-white sm:pb-0">
 
-      {/* HEADER */}
+      {/* =====================================================
+          HEADER
+      ====================================================== */}
 
       <div className="mb-8">
 
@@ -409,7 +528,7 @@ export default function Analytics({ user }) {
 
           <div>
 
-            <p className="mb-1 text-sm text-white/40">
+            <p className="mb-1 text-sm text-blue-400/70">
               Financial insights
             </p>
 
@@ -417,9 +536,10 @@ export default function Analytics({ user }) {
               Analytics
             </h1>
 
-            <p className="mt-2 text-sm text-white/40">
-              Understand your income, expenses and
-              spending patterns.
+            <p className="mt-2 max-w-xl text-sm text-white/40">
+              Understand your income,
+              expenses and spending
+              patterns.
             </p>
 
           </div>
@@ -429,12 +549,16 @@ export default function Analytics({ user }) {
           <div className="flex rounded-2xl border border-white/10 bg-white/[0.04] p-1">
 
             <button
+              type="button"
               onClick={() =>
-                setPeriod("monthly")
+                setPeriod(
+                  "monthly"
+                )
               }
               className={`rounded-xl px-4 py-2 text-sm transition ${
-                period === "monthly"
-                  ? "bg-white text-black"
+                period ===
+                "monthly"
+                  ? "bg-blue-500 text-white shadow-lg shadow-blue-500/20"
                   : "text-white/50 hover:text-white"
               }`}
             >
@@ -442,12 +566,16 @@ export default function Analytics({ user }) {
             </button>
 
             <button
+              type="button"
               onClick={() =>
-                setPeriod("yearly")
+                setPeriod(
+                  "yearly"
+                )
               }
               className={`rounded-xl px-4 py-2 text-sm transition ${
-                period === "yearly"
-                  ? "bg-white text-black"
+                period ===
+                "yearly"
+                  ? "bg-blue-500 text-white shadow-lg shadow-blue-500/20"
                   : "text-white/50 hover:text-white"
               }`}
             >
@@ -467,28 +595,42 @@ export default function Analytics({ user }) {
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
 
         <StatCard
-          icon={<TrendingUp size={20} />}
+          icon={
+            <TrendingUp
+              size={20}
+            />
+          }
           title="Income"
           value={totals.income}
           type="income"
         />
 
         <StatCard
-          icon={<TrendingDown size={20} />}
+          icon={
+            <TrendingDown
+              size={20}
+            />
+          }
           title="Expenses"
           value={totals.expense}
           type="expense"
         />
 
         <StatCard
-          icon={<Wallet size={20} />}
+          icon={
+            <Wallet size={20} />
+          }
           title="Balance"
           value={totals.balance}
           type="balance"
         />
 
         <StatCard
-          icon={<BarChart3 size={20} />}
+          icon={
+            <BarChart3
+              size={20}
+            />
+          }
           title="Savings Rate"
           value={`${totals.savingsRate}%`}
           type="saving"
@@ -504,23 +646,32 @@ export default function Analytics({ user }) {
       <SectionCard className="mb-6">
 
         <SectionHeader
-          icon={<BarChart3 size={20} />}
+          icon={
+            <BarChart3
+              size={20}
+            />
+          }
           title={
-            period === "monthly"
+            period ===
+            "monthly"
               ? "Monthly Income vs Expense"
               : "Yearly Income vs Expense"
           }
           subtitle={
-            period === "monthly"
-              ? `${today.toLocaleDateString(
+            period ===
+            "monthly"
+              ? today.toLocaleDateString(
                   "en-US",
                   {
-                    month: "long",
-                    year: "numeric",
+                    month:
+                      "long",
+                    year:
+                      "numeric",
                   }
-                )}`
+                )
               : `${currentYear}`
           }
+          color="blue"
         />
 
         <div className="h-[350px]">
@@ -530,9 +681,14 @@ export default function Analytics({ user }) {
             height="100%"
           >
 
-            {period === "monthly" ? (
+            {period ===
+            "monthly" ? (
 
-              <BarChart data={monthlyChartData}>
+              <BarChart
+                data={
+                  monthlyChartData
+                }
+              >
 
                 <CartesianGrid
                   strokeDasharray="3 3"
@@ -554,13 +710,18 @@ export default function Analytics({ user }) {
 
                 <Tooltip
                   contentStyle={{
-                    background: "#111",
+                    background:
+                      "#111",
                     border:
                       "1px solid rgba(255,255,255,0.1)",
-                    borderRadius: "16px",
-                    color: "#fff",
+                    borderRadius:
+                      "16px",
+                    color:
+                      "#fff",
                   }}
-                  formatter={(value) =>
+                  formatter={(
+                    value
+                  ) =>
                     `Rs. ${Number(
                       value
                     ).toLocaleString()}`
@@ -572,7 +733,9 @@ export default function Analytics({ user }) {
                 <Bar
                   dataKey="income"
                   name="Income"
-                  fill="#22c55e"
+                  fill={
+                    COLORS.green
+                  }
                   radius={[
                     5,
                     5,
@@ -584,7 +747,9 @@ export default function Analytics({ user }) {
                 <Bar
                   dataKey="expense"
                   name="Expense"
-                  fill="#ef4444"
+                  fill={
+                    COLORS.red
+                  }
                   radius={[
                     5,
                     5,
@@ -597,7 +762,11 @@ export default function Analytics({ user }) {
 
             ) : (
 
-              <BarChart data={yearlyChartData}>
+              <BarChart
+                data={
+                  yearlyChartData
+                }
+              >
 
                 <CartesianGrid
                   strokeDasharray="3 3"
@@ -619,13 +788,18 @@ export default function Analytics({ user }) {
 
                 <Tooltip
                   contentStyle={{
-                    background: "#111",
+                    background:
+                      "#111",
                     border:
                       "1px solid rgba(255,255,255,0.1)",
-                    borderRadius: "16px",
-                    color: "#fff",
+                    borderRadius:
+                      "16px",
+                    color:
+                      "#fff",
                   }}
-                  formatter={(value) =>
+                  formatter={(
+                    value
+                  ) =>
                     `Rs. ${Number(
                       value
                     ).toLocaleString()}`
@@ -637,7 +811,9 @@ export default function Analytics({ user }) {
                 <Bar
                   dataKey="income"
                   name="Income"
-                  fill="#22c55e"
+                  fill={
+                    COLORS.green
+                  }
                   radius={[
                     5,
                     5,
@@ -649,7 +825,9 @@ export default function Analytics({ user }) {
                 <Bar
                   dataKey="expense"
                   name="Expense"
-                  fill="#ef4444"
+                  fill={
+                    COLORS.red
+                  }
                   radius={[
                     5,
                     5,
@@ -675,9 +853,14 @@ export default function Analytics({ user }) {
       <SectionCard className="mb-6">
 
         <SectionHeader
-          icon={<CalendarDays size={20} />}
+          icon={
+            <CalendarDays
+              size={20}
+            />
+          }
           title="Last 7 Days"
           subtitle="Recent financial activity"
+          color="blue"
         />
 
         <div className="h-[300px]">
@@ -687,7 +870,11 @@ export default function Analytics({ user }) {
             height="100%"
           >
 
-            <LineChart data={sevenDayData}>
+            <LineChart
+              data={
+                sevenDayData
+              }
+            >
 
               <CartesianGrid
                 strokeDasharray="3 3"
@@ -709,13 +896,17 @@ export default function Analytics({ user }) {
 
               <Tooltip
                 contentStyle={{
-                  background: "#111",
+                  background:
+                    "#111",
                   border:
                     "1px solid rgba(255,255,255,0.1)",
-                  borderRadius: "16px",
+                  borderRadius:
+                    "16px",
                   color: "#fff",
                 }}
-                formatter={(value) =>
+                formatter={(
+                  value
+                ) =>
                   `Rs. ${Number(
                     value
                   ).toLocaleString()}`
@@ -728,18 +919,34 @@ export default function Analytics({ user }) {
                 type="monotone"
                 dataKey="income"
                 name="Income"
-                stroke="#22c55e"
+                stroke={
+                  COLORS.green
+                }
                 strokeWidth={3}
-                dot={{ r: 4 }}
+                dot={{
+                  r: 4,
+                  fill: COLORS.green,
+                }}
+                activeDot={{
+                  r: 6,
+                }}
               />
 
               <Line
                 type="monotone"
                 dataKey="expense"
                 name="Expense"
-                stroke="#ef4444"
+                stroke={
+                  COLORS.red
+                }
                 strokeWidth={3}
-                dot={{ r: 4 }}
+                dot={{
+                  r: 4,
+                  fill: COLORS.red,
+                }}
+                activeDot={{
+                  r: 6,
+                }}
               />
 
             </LineChart>
@@ -761,12 +968,16 @@ export default function Analytics({ user }) {
         <SectionCard>
 
           <SectionHeader
-            icon={<Wallet size={20} />}
+            icon={
+              <Wallet size={20} />
+            }
             title="Expense Categories"
             subtitle="Your spending breakdown"
+            color="blue"
           />
 
-          {categoryData.length === 0 ? (
+          {categoryData.length ===
+          0 ? (
 
             <EmptyState text="No expenses for this period." />
 
@@ -784,7 +995,9 @@ export default function Analytics({ user }) {
                   <PieChart>
 
                     <Pie
-                      data={categoryData}
+                      data={
+                        categoryData
+                      }
                       dataKey="value"
                       nameKey="name"
                       cx="50%"
@@ -795,7 +1008,10 @@ export default function Analytics({ user }) {
                     >
 
                       {categoryData.map(
-                        (entry, index) => (
+                        (
+                          entry,
+                          index
+                        ) => (
                           <Cell
                             key={`cell-${index}`}
                             fill={
@@ -812,13 +1028,18 @@ export default function Analytics({ user }) {
 
                     <Tooltip
                       contentStyle={{
-                        background: "#111",
+                        background:
+                          "#111",
                         border:
                           "1px solid rgba(255,255,255,0.1)",
-                        borderRadius: "16px",
-                        color: "#fff",
+                        borderRadius:
+                          "16px",
+                        color:
+                          "#fff",
                       }}
-                      formatter={(value) =>
+                      formatter={(
+                        value
+                      ) =>
                         `Rs. ${Number(
                           value
                         ).toLocaleString()}`
@@ -834,10 +1055,14 @@ export default function Analytics({ user }) {
               <div className="space-y-3">
 
                 {categoryData.map(
-                  (item, index) => {
+                  (
+                    item,
+                    index
+                  ) => {
 
                     const percentage =
-                      totals.expense > 0
+                      totals.expense >
+                      0
                         ? Math.round(
                             (item.value /
                               totals.expense) *
@@ -845,9 +1070,17 @@ export default function Analytics({ user }) {
                           )
                         : 0;
 
+                    const color =
+                      CHART_COLORS[
+                        index %
+                          CHART_COLORS.length
+                      ];
+
                     return (
                       <div
-                        key={item.name}
+                        key={
+                          item.name
+                        }
                         className="flex items-center justify-between gap-4"
                       >
 
@@ -857,15 +1090,14 @@ export default function Analytics({ user }) {
                             className="h-3 w-3 shrink-0 rounded-full"
                             style={{
                               backgroundColor:
-                                CHART_COLORS[
-                                  index %
-                                    CHART_COLORS.length
-                                ],
+                                color,
                             }}
                           />
 
                           <span className="truncate text-sm">
-                            {item.name}
+                            {
+                              item.name
+                            }
                           </span>
 
                         </div>
@@ -873,7 +1105,10 @@ export default function Analytics({ user }) {
                         <div className="flex shrink-0 items-center gap-3">
 
                           <span className="text-xs text-white/30">
-                            {percentage}%
+                            {
+                              percentage
+                            }
+                            %
                           </span>
 
                           <span className="text-sm">
@@ -901,43 +1136,68 @@ export default function Analytics({ user }) {
         <SectionCard>
 
           <SectionHeader
-            icon={<BarChart3 size={20} />}
+            icon={
+              <BarChart3
+                size={20}
+              />
+            }
             title="Financial Insights"
             subtitle="Quick overview"
+            color="blue"
           />
 
           <div className="space-y-3">
 
             <InsightRow
-              icon={<TrendingUp size={17} />}
+              icon={
+                <TrendingUp
+                  size={17}
+                />
+              }
               title="Total Income"
               value={`Rs. ${totals.income.toLocaleString()}`}
               positive
             />
 
             <InsightRow
-              icon={<TrendingDown size={17} />}
+              icon={
+                <TrendingDown
+                  size={17}
+                />
+              }
               title="Total Expenses"
               value={`Rs. ${totals.expense.toLocaleString()}`}
               negative
             />
 
             <InsightRow
-              icon={<Wallet size={17} />}
+              icon={
+                <Wallet size={17} />
+              }
               title="Remaining Balance"
               value={`Rs. ${totals.balance.toLocaleString()}`}
+              balance
             />
 
             <InsightRow
-              icon={<CalendarDays size={17} />}
+              icon={
+                <CalendarDays
+                  size={17}
+                />
+              }
               title="Average Daily Expense"
               value={`Rs. ${Math.round(
                 averageDailyExpense
               ).toLocaleString()}`}
+              balance
             />
 
             <InsightRow
-              icon={<ArrowDownRight size={17} />}
+              icon={
+                <ArrowDownRight
+                  size={17}
+                />
+              }
               title="Highest Expense"
               value={
                 highestExpense
@@ -946,13 +1206,15 @@ export default function Analytics({ user }) {
                     ).toLocaleString()}`
                   : "None"
               }
+              negative
             />
 
             {highestExpense && (
-              <div className="rounded-2xl bg-white/[0.04] p-4">
+              <div className="rounded-2xl border border-blue-500/10 bg-blue-500/[0.04] p-4">
 
-                <p className="text-xs text-white/30">
-                  Highest expense category
+                <p className="text-xs text-blue-400/60">
+                  Highest expense
+                  category
                 </p>
 
                 <p className="mt-1 font-medium">
@@ -962,7 +1224,9 @@ export default function Analytics({ user }) {
 
                 {highestExpense.description && (
                   <p className="mt-1 text-xs text-white/30">
-                    {highestExpense.description}
+                    {
+                      highestExpense.description
+                    }
                   </p>
                 )}
 
@@ -983,7 +1247,10 @@ export default function Analytics({ user }) {
 
         <SmallStat
           title="Transactions"
-          value={filteredFinance.length}
+          value={
+            filteredFinance.length
+          }
+          color="blue"
         />
 
         <SmallStat
@@ -991,9 +1258,11 @@ export default function Analytics({ user }) {
           value={
             filteredFinance.filter(
               (item) =>
-                item.type === "income"
+                item.type ===
+                "income"
             ).length
           }
+          color="green"
         />
 
         <SmallStat
@@ -1001,9 +1270,11 @@ export default function Analytics({ user }) {
           value={
             filteredFinance.filter(
               (item) =>
-                item.type === "expense"
+                item.type ===
+                "expense"
             ).length
           }
+          color="red"
         />
 
       </div>
@@ -1011,21 +1282,6 @@ export default function Analytics({ user }) {
     </div>
   );
 }
-
-// ===========================================================
-// COLORS
-// ===========================================================
-
-const CHART_COLORS = [
-  "#22c55e",
-  "#ef4444",
-  "#3b82f6",
-  "#f59e0b",
-  "#a855f7",
-  "#06b6d4",
-  "#ec4899",
-  "#84cc16",
-];
 
 // ===========================================================
 // STAT CARD
@@ -1038,10 +1294,56 @@ function StatCard({
   type,
   noCurrency = false,
 }) {
-  return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
+  const colorClasses = {
+    income: {
+      wrapper:
+        "border-green-500/20 bg-green-500/[0.045]",
+      icon:
+        "bg-green-500/10 text-green-400",
+      text:
+        "text-green-400",
+    },
 
-      <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10">
+    expense: {
+      wrapper:
+        "border-red-500/20 bg-red-500/[0.045]",
+      icon:
+        "bg-red-500/10 text-red-400",
+      text:
+        "text-red-400",
+    },
+
+    balance: {
+      wrapper:
+        "border-blue-500/20 bg-blue-500/[0.045]",
+      icon:
+        "bg-blue-500/10 text-blue-400",
+      text:
+        "text-blue-400",
+    },
+
+    saving: {
+      wrapper:
+        "border-blue-500/20 bg-blue-500/[0.045]",
+      icon:
+        "bg-blue-500/10 text-blue-400",
+      text:
+        "text-blue-400",
+    },
+  };
+
+  const style =
+    colorClasses[type] ||
+    colorClasses.balance;
+
+  return (
+    <div
+      className={`rounded-3xl border p-5 backdrop-blur-xl transition hover:bg-white/[0.06] ${style.wrapper}`}
+    >
+
+      <div
+        className={`mb-5 flex h-11 w-11 items-center justify-center rounded-2xl ${style.icon}`}
+      >
         {icon}
       </div>
 
@@ -1052,28 +1354,33 @@ function StatCard({
       <p className="mt-2 text-2xl font-bold">
 
         {!noCurrency && (
-          <>
-            Rs.{" "}
-          </>
+          <>Rs. </>
         )}
 
-        {typeof value === "number"
+        {typeof value ===
+        "number"
           ? value.toLocaleString()
           : value}
 
       </p>
 
-      <p className="mt-2 text-xs text-white/25">
-        {type === "income" &&
+      <p
+        className={`mt-2 text-xs ${style.text} opacity-60`}
+      >
+        {type ===
+          "income" &&
           "Money received"}
 
-        {type === "expense" &&
+        {type ===
+          "expense" &&
           "Money spent"}
 
-        {type === "balance" &&
+        {type ===
+          "balance" &&
           "Income minus expenses"}
 
-        {type === "saving" &&
+        {type ===
+          "saving" &&
           "Percentage of income saved"}
       </p>
 
@@ -1091,7 +1398,7 @@ function SectionCard({
 }) {
   return (
     <div
-      className={`rounded-3xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl ${className}`}
+      className={`rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-xl shadow-black/10 backdrop-blur-xl ${className}`}
     >
       {children}
     </div>
@@ -1106,11 +1413,23 @@ function SectionHeader({
   icon,
   title,
   subtitle,
+  color = "blue",
 }) {
+  const colors = {
+    blue:
+      "bg-blue-500/10 text-blue-400",
+    green:
+      "bg-green-500/10 text-green-400",
+    red:
+      "bg-red-500/10 text-red-400",
+  };
+
   return (
     <div className="mb-6 flex items-center gap-3">
 
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10">
+      <div
+        className={`flex h-10 w-10 items-center justify-center rounded-xl ${colors[color]}`}
+      >
         {icon}
       </div>
 
@@ -1140,13 +1459,34 @@ function InsightRow({
   value,
   positive,
   negative,
+  balance,
 }) {
+  let color =
+    "text-blue-400";
+
+  if (positive) {
+    color =
+      "text-green-400";
+  }
+
+  if (negative) {
+    color =
+      "text-red-400";
+  }
+
+  if (balance) {
+    color =
+      "text-blue-400";
+  }
+
   return (
-    <div className="flex items-center justify-between rounded-2xl bg-white/[0.04] p-4">
+    <div className="flex items-center justify-between rounded-2xl border border-white/[0.05] bg-white/[0.035] p-4 transition hover:bg-white/[0.06]">
 
       <div className="flex items-center gap-3">
 
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10">
+        <div
+          className={`flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.06] ${color}`}
+        >
           {icon}
         </div>
 
@@ -1172,7 +1512,9 @@ function InsightRow({
           />
         )}
 
-        <span className="text-sm font-medium">
+        <span
+          className={`text-sm font-medium ${color}`}
+        >
           {value}
         </span>
 
@@ -1189,15 +1531,47 @@ function InsightRow({
 function SmallStat({
   title,
   value,
+  color = "blue",
 }) {
+  const colors = {
+    blue: {
+      border:
+        "border-blue-500/15",
+      value:
+        "text-blue-400",
+    },
+
+    green: {
+      border:
+        "border-green-500/15",
+      value:
+        "text-green-400",
+    },
+
+    red: {
+      border:
+        "border-red-500/15",
+      value:
+        "text-red-400",
+    },
+  };
+
+  const style =
+    colors[color] ||
+    colors.blue;
+
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+    <div
+      className={`rounded-3xl border bg-white/[0.04] p-5 backdrop-blur-xl ${style.border}`}
+    >
 
       <p className="text-sm text-white/40">
         {title}
       </p>
 
-      <p className="mt-2 text-2xl font-bold">
+      <p
+        className={`mt-2 text-2xl font-bold ${style.value}`}
+      >
         {value}
       </p>
 
@@ -1209,7 +1583,9 @@ function SmallStat({
 // EMPTY STATE
 // ===========================================================
 
-function EmptyState({ text }) {
+function EmptyState({
+  text,
+}) {
   return (
     <div className="py-12 text-center text-sm text-white/30">
       {text}
