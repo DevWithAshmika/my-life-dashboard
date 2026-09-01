@@ -8,6 +8,10 @@ import {
   Wallet,
   TrendingUp,
   TrendingDown,
+  Search,
+  Filter,
+  CalendarDays,
+  ChevronDown,
 } from "lucide-react";
 
 import {
@@ -54,6 +58,10 @@ const CURRENCIES = {
 };
 
 export default function Finance({ user }) {
+  // =========================================================
+  // DATA
+  // =========================================================
+
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -62,6 +70,17 @@ export default function Finance({ user }) {
   // =========================================================
 
   const [currency, setCurrency] = useState("LKR");
+
+  // =========================================================
+  // FILTERS
+  // =========================================================
+
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
+
+  const [monthFilter, setMonthFilter] = useState(() => {
+    return new Date().toISOString().slice(0, 7);
+  });
 
   // =========================================================
   // FORM
@@ -144,7 +163,9 @@ export default function Finance({ user }) {
   };
 
   const money = (amount) => {
-    return `${currentCurrency.symbol} ${formatMoney(amount)}`;
+    return `${currentCurrency.symbol} ${formatMoney(
+      amount
+    )}`;
   };
 
   // =========================================================
@@ -252,34 +273,72 @@ export default function Finance({ user }) {
   }, [user?.uid]);
 
   // =========================================================
-  // CURRENT MONTH
+  // FILTERED RECORDS
   // =========================================================
 
-  const currentMonth = new Date()
-    .toISOString()
-    .slice(0, 7);
+  const filteredRecords = useMemo(() => {
+    const searchValue =
+      search.trim().toLowerCase();
+
+    return records.filter((item) => {
+      // Month
+      if (monthFilter !== "all") {
+        if (
+          !String(item.date || "").startsWith(
+            monthFilter
+          )
+        ) {
+          return false;
+        }
+      }
+
+      // Type
+      if (
+        typeFilter !== "all" &&
+        item.type !== typeFilter
+      ) {
+        return false;
+      }
+
+      // Search
+      if (searchValue) {
+        const searchableText = [
+          item.category,
+          item.description,
+          item.date,
+          item.type,
+          String(item.amount || ""),
+        ]
+          .join(" ")
+          .toLowerCase();
+
+        if (
+          !searchableText.includes(
+            searchValue
+          )
+        ) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [
+    records,
+    search,
+    typeFilter,
+    monthFilter,
+  ]);
 
   // =========================================================
-  // MONTHLY RECORDS
-  // =========================================================
-
-  const monthlyRecords = useMemo(() => {
-    return records.filter((item) =>
-      String(item.date || "").startsWith(
-        currentMonth
-      )
-    );
-  }, [records, currentMonth]);
-
-  // =========================================================
-  // TOTALS
+  // FILTERED TOTALS
   // =========================================================
 
   const totals = useMemo(() => {
     let income = 0;
     let expense = 0;
 
-    monthlyRecords.forEach((item) => {
+    filteredRecords.forEach((item) => {
       const amount = Number(
         item.amount || 0
       );
@@ -298,7 +357,94 @@ export default function Finance({ user }) {
       expense,
       balance: income - expense,
     };
-  }, [monthlyRecords]);
+  }, [filteredRecords]);
+
+  // =========================================================
+  // ALL TIME TOTALS
+  // =========================================================
+
+  const allTimeTotals = useMemo(() => {
+    let income = 0;
+    let expense = 0;
+
+    records.forEach((item) => {
+      const amount = Number(
+        item.amount || 0
+      );
+
+      if (item.type === "income") {
+        income += amount;
+      }
+
+      if (item.type === "expense") {
+        expense += amount;
+      }
+    });
+
+    return {
+      income,
+      expense,
+      balance: income - expense,
+    };
+  }, [records]);
+
+  // =========================================================
+  // MONTH OPTIONS
+  // =========================================================
+
+  const availableMonths = useMemo(() => {
+    const months = new Set();
+
+    records.forEach((item) => {
+      if (item.date) {
+        const month = String(
+          item.date
+        ).slice(0, 7);
+
+        if (month) {
+          months.add(month);
+        }
+      }
+    });
+
+    const currentMonth =
+      new Date()
+        .toISOString()
+        .slice(0, 7);
+
+    months.add(currentMonth);
+
+    return Array.from(months).sort(
+      (a, b) => b.localeCompare(a)
+    );
+  }, [records]);
+
+  // =========================================================
+  // MONTH LABEL
+  // =========================================================
+
+  const formatMonth = (value) => {
+    if (!value || value === "all") {
+      return "All Months";
+    }
+
+    const [year, month] =
+      value.split("-");
+
+    const date = new Date(
+      Number(year),
+      Number(month) - 1,
+      1
+    );
+
+    return date.toLocaleDateString(
+      "en-US",
+      {
+        month: "long",
+        year: "numeric",
+      }
+    );
+  };
 
   // =========================================================
   // FORM CHANGE
@@ -360,9 +506,12 @@ export default function Finance({ user }) {
     setForm({
       type: item.type || "income",
       amount: item.amount ?? "",
-      category: item.category || "Other",
-      description: item.description || "",
-      date: item.date || getToday(),
+      category:
+        item.category || "Other",
+      description:
+        item.description || "",
+      date:
+        item.date || getToday(),
     });
 
     setShowForm(true);
@@ -398,15 +547,21 @@ export default function Finance({ user }) {
       return;
     }
 
-    const amount = Number(form.amount);
+    const amount = Number(
+      form.amount
+    );
 
     if (!amount || amount <= 0) {
-      alert("Please enter a valid amount.");
+      alert(
+        "Please enter a valid amount."
+      );
       return;
     }
 
     if (!form.date) {
-      alert("Please select a date.");
+      alert(
+        "Please select a date."
+      );
       return;
     }
 
@@ -474,9 +629,10 @@ export default function Finance({ user }) {
       return;
     }
 
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this transaction?"
-    );
+    const confirmed =
+      window.confirm(
+        "Are you sure you want to delete this transaction?"
+      );
 
     if (!confirmed) {
       return;
@@ -505,12 +661,28 @@ export default function Finance({ user }) {
   };
 
   // =========================================================
+  // CLEAR FILTERS
+  // =========================================================
+
+  const clearFilters = () => {
+    setSearch("");
+    setTypeFilter("all");
+    setMonthFilter(
+      new Date()
+        .toISOString()
+        .slice(0, 7)
+    );
+  };
+
+  // =========================================================
   // LOADING
   // =========================================================
 
   if (loading) {
     return (
-      <Loading text="Loading finance..." />
+      <Loading
+        text="Loading finance..."
+      />
     );
   }
 
@@ -592,7 +764,7 @@ export default function Finance({ user }) {
           </div>
 
           <p className="text-sm text-white/40">
-            Total Income This Month
+            Total Income
           </p>
 
           <p className="mt-2 text-3xl font-bold text-green-400">
@@ -610,7 +782,7 @@ export default function Finance({ user }) {
           </div>
 
           <p className="text-sm text-white/40">
-            Total Expense This Month
+            Total Expense
           </p>
 
           <p className="mt-2 text-3xl font-bold text-red-400">
@@ -640,7 +812,7 @@ export default function Finance({ user }) {
           </div>
 
           <p className="text-sm text-white/40">
-            Balance This Month
+            Balance
           </p>
 
           <p
@@ -658,24 +830,228 @@ export default function Finance({ user }) {
       </div>
 
       {/* =====================================================
-          TRANSACTIONS
+          FILTERS
+      ====================================================== */}
+
+      <div className="mb-6 rounded-3xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-xl sm:p-5">
+
+        <div className="mb-4 flex items-center gap-3">
+
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-white/60">
+            <Filter size={18} />
+          </div>
+
+          <div>
+            <h2 className="font-semibold">
+              Transactions
+            </h2>
+
+            <p className="text-xs text-white/30">
+              Search and filter your records
+            </p>
+          </div>
+
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto_auto]">
+
+          {/* SEARCH */}
+
+          <div className="relative">
+
+            <Search
+              size={17}
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30"
+            />
+
+            <input
+              type="text"
+              value={search}
+              onChange={(event) =>
+                setSearch(
+                  event.target.value
+                )
+              }
+              placeholder="Search transactions..."
+              className="w-full rounded-2xl border border-white/10 bg-white/5 py-3 pl-11 pr-4 text-sm text-white outline-none placeholder:text-white/20 focus:border-white/30"
+            />
+
+          </div>
+
+          {/* TYPE */}
+
+          <div className="relative">
+
+            <select
+              value={typeFilter}
+              onChange={(event) =>
+                setTypeFilter(
+                  event.target.value
+                )
+              }
+              className="w-full appearance-none rounded-2xl border border-white/10 bg-[#181818] px-4 py-3 pr-10 text-sm text-white outline-none focus:border-white/30"
+            >
+              <option value="all">
+                All Types
+              </option>
+
+              <option value="income">
+                Income
+              </option>
+
+              <option value="expense">
+                Expense
+              </option>
+            </select>
+
+            <ChevronDown
+              size={16}
+              className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-white/40"
+            />
+
+          </div>
+
+          {/* MONTH */}
+
+          <div className="relative">
+
+            <CalendarDays
+              size={16}
+              className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/30"
+            />
+
+            <select
+              value={monthFilter}
+              onChange={(event) =>
+                setMonthFilter(
+                  event.target.value
+                )
+              }
+              className="w-full appearance-none rounded-2xl border border-white/10 bg-[#181818] py-3 pl-11 pr-10 text-sm text-white outline-none focus:border-white/30"
+            >
+
+              <option value="all">
+                All Months
+              </option>
+
+              {availableMonths.map(
+                (month) => (
+                  <option
+                    key={month}
+                    value={month}
+                  >
+                    {formatMonth(month)}
+                  </option>
+                )
+              )}
+
+            </select>
+
+            <ChevronDown
+              size={16}
+              className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-white/40"
+            />
+
+          </div>
+
+          {/* CLEAR */}
+
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/60 transition hover:bg-white/10 hover:text-white"
+          >
+            Clear
+          </button>
+
+        </div>
+
+        {/* FILTER INFO */}
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] pt-4">
+
+          <div className="flex flex-wrap items-center gap-2 text-xs text-white/30">
+
+            <span>
+              Showing{" "}
+              <span className="font-semibold text-white/70">
+                {filteredRecords.length}
+              </span>{" "}
+              of{" "}
+              <span className="font-semibold text-white/70">
+                {records.length}
+              </span>{" "}
+              transactions
+            </span>
+
+            <span className="hidden text-white/10 sm:inline">
+              •
+            </span>
+
+            <span>
+              {formatMonth(
+                monthFilter
+              )}
+            </span>
+
+          </div>
+
+          <div className="flex gap-4 text-xs">
+
+            <span className="text-green-400">
+              + {money(totals.income)}
+            </span>
+
+            <span className="text-red-400">
+              - {money(totals.expense)}
+            </span>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* =====================================================
+          TRANSACTION LIST
       ====================================================== */}
 
       <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-xl sm:p-5">
 
-        <div className="mb-5">
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 
-          <h2 className="text-lg font-semibold">
-            Transactions
-          </h2>
+          <div>
+            <h2 className="text-lg font-semibold">
+              Transaction Records
+            </h2>
 
-          <p className="mt-1 text-xs text-white/30">
-            Your finance records
-          </p>
+            <p className="mt-1 text-xs text-white/30">
+              {monthFilter === "all"
+                ? "All finance records"
+                : formatMonth(
+                    monthFilter
+                  )}
+            </p>
+          </div>
+
+          <div className="text-sm text-white/30">
+            Balance:{" "}
+            <span
+              className={
+                totals.balance >= 0
+                  ? "font-semibold text-green-400"
+                  : "font-semibold text-red-400"
+              }
+            >
+              {money(
+                totals.balance
+              )}
+            </span>
+          </div>
 
         </div>
 
-        {records.length === 0 ? (
+        {filteredRecords.length === 0 ? (
 
           <div className="py-16 text-center">
 
@@ -685,16 +1061,32 @@ export default function Finance({ user }) {
             />
 
             <p className="text-sm text-white/30">
-              No transactions yet.
+              {records.length === 0
+                ? "No transactions yet."
+                : "No transactions match your filters."}
             </p>
 
-            <button
-              type="button"
-              onClick={openAddForm}
-              className="mt-4 rounded-xl bg-white px-4 py-2 text-sm font-medium text-black"
-            >
-              Add Transaction
-            </button>
+            {records.length === 0 ? (
+
+              <button
+                type="button"
+                onClick={openAddForm}
+                className="mt-4 rounded-xl bg-white px-4 py-2 text-sm font-medium text-black"
+              >
+                Add Transaction
+              </button>
+
+            ) : (
+
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="mt-4 rounded-xl bg-white/10 px-4 py-2 text-sm font-medium text-white"
+              >
+                Clear Filters
+              </button>
+
+            )}
 
           </div>
 
@@ -702,111 +1094,202 @@ export default function Finance({ user }) {
 
           <div className="space-y-3">
 
-            {records.map((item) => (
+            {filteredRecords.map(
+              (item) => (
 
-              <div
-                key={item.id}
-                className="flex flex-col gap-4 rounded-2xl bg-white/[0.03] p-4 transition hover:bg-white/[0.06] sm:flex-row sm:items-center sm:justify-between"
-              >
+                <div
+                  key={item.id}
+                  className="flex flex-col gap-4 rounded-2xl bg-white/[0.03] p-4 transition hover:bg-white/[0.06] sm:flex-row sm:items-center sm:justify-between"
+                >
 
-                {/* LEFT */}
+                  {/* LEFT */}
 
-                <div className="flex min-w-0 items-center gap-4">
+                  <div className="flex min-w-0 items-center gap-4">
 
-                  <div
-                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
-                      item.type === "income"
-                        ? "bg-green-500/10 text-green-400"
-                        : "bg-red-500/10 text-red-400"
-                    }`}
-                  >
+                    <div
+                      className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+                        item.type === "income"
+                          ? "bg-green-500/10 text-green-400"
+                          : "bg-red-500/10 text-red-400"
+                      }`}
+                    >
 
-                    {item.type === "income" ? (
-                      <TrendingUp size={18} />
-                    ) : (
-                      <TrendingDown size={18} />
-                    )}
+                      {item.type ===
+                      "income" ? (
+                        <TrendingUp
+                          size={18}
+                        />
+                      ) : (
+                        <TrendingDown
+                          size={18}
+                        />
+                      )}
+
+                    </div>
+
+                    <div className="min-w-0">
+
+                      <p className="truncate font-medium">
+                        {item.category ||
+                          "Other"}
+                      </p>
+
+                      <p className="truncate text-xs text-white/30">
+                        {item.description ||
+                          "No description"}
+                      </p>
+
+                      <p className="mt-1 text-xs text-white/20">
+                        {item.date || "-"}
+                      </p>
+
+                    </div>
 
                   </div>
 
-                  <div className="min-w-0">
+                  {/* RIGHT */}
 
-                    <p className="truncate font-medium">
-                      {item.category || "Other"}
+                  <div className="flex items-center justify-between gap-4 sm:justify-end">
+
+                    <p
+                      className={`font-semibold ${
+                        item.type ===
+                        "income"
+                          ? "text-green-400"
+                          : "text-red-400"
+                      }`}
+                    >
+
+                      {item.type ===
+                      "income"
+                        ? "+"
+                        : "-"}
+
+                      {" "}
+
+                      {money(
+                        item.amount
+                      )}
+
                     </p>
 
-                    <p className="truncate text-xs text-white/30">
-                      {item.description ||
-                        "No description"}
-                    </p>
+                    <div className="flex gap-2">
 
-                    <p className="mt-1 text-xs text-white/20">
-                      {item.date || "-"}
-                    </p>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openEditForm(
+                            item
+                          )
+                        }
+                        className="rounded-xl bg-white/10 p-2 transition hover:bg-white/20"
+                        aria-label="Edit transaction"
+                      >
+                        <Pencil
+                          size={15}
+                        />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleDelete(
+                            item.id
+                          )
+                        }
+                        className="rounded-xl bg-red-500/10 p-2 text-red-400 transition hover:bg-red-500/20"
+                        aria-label="Delete transaction"
+                      >
+                        <Trash2
+                          size={15}
+                        />
+                      </button>
+
+                    </div>
 
                   </div>
 
                 </div>
 
-                {/* RIGHT */}
-
-                <div className="flex items-center justify-between gap-4 sm:justify-end">
-
-                  <p
-                    className={`font-semibold ${
-                      item.type === "income"
-                        ? "text-green-400"
-                        : "text-red-400"
-                    }`}
-                  >
-
-                    {item.type === "income"
-                      ? "+"
-                      : "-"}
-
-                    {" "}
-
-                    {money(item.amount)}
-
-                  </p>
-
-                  <div className="flex gap-2">
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        openEditForm(item)
-                      }
-                      className="rounded-xl bg-white/10 p-2 transition hover:bg-white/20"
-                      aria-label="Edit transaction"
-                    >
-                      <Pencil size={15} />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleDelete(item.id)
-                      }
-                      className="rounded-xl bg-red-500/10 p-2 text-red-400 transition hover:bg-red-500/20"
-                      aria-label="Delete transaction"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-
-                  </div>
-
-                </div>
-
-              </div>
-
-            ))}
+              )
+            )}
 
           </div>
 
         )}
 
       </div>
+
+      {/* =====================================================
+          ALL TIME INFO
+      ====================================================== */}
+
+      {records.length > 0 && (
+        <div className="mt-5 rounded-3xl border border-white/10 bg-white/[0.025] p-5">
+
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+
+            <div>
+              <p className="text-sm font-medium">
+                All-time overview
+              </p>
+
+              <p className="mt-1 text-xs text-white/30">
+                Based on all your saved finance records
+              </p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4 text-right">
+
+              <div>
+                <p className="text-[10px] text-white/30">
+                  Income
+                </p>
+
+                <p className="mt-1 text-sm font-semibold text-green-400">
+                  {money(
+                    allTimeTotals.income
+                  )}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-[10px] text-white/30">
+                  Expense
+                </p>
+
+                <p className="mt-1 text-sm font-semibold text-red-400">
+                  {money(
+                    allTimeTotals.expense
+                  )}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-[10px] text-white/30">
+                  Balance
+                </p>
+
+                <p
+                  className={`mt-1 text-sm font-semibold ${
+                    allTimeTotals.balance >=
+                    0
+                      ? "text-green-400"
+                      : "text-red-400"
+                  }`}
+                >
+                  {money(
+                    allTimeTotals.balance
+                  )}
+                </p>
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+      )}
 
       {/* =====================================================
           MOBILE FLOATING ADD BUTTON
@@ -818,7 +1301,10 @@ export default function Finance({ user }) {
         aria-label="Add transaction"
         className="fixed bottom-24 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-white text-black shadow-2xl shadow-black/40 transition hover:bg-white/90 active:scale-90 sm:hidden"
       >
-        <Plus size={25} strokeWidth={2.5} />
+        <Plus
+          size={25}
+          strokeWidth={2.5}
+        />
       </button>
 
       {/* =====================================================
@@ -831,7 +1317,8 @@ export default function Finance({ user }) {
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4"
           onMouseDown={(event) => {
             if (
-              event.target === event.currentTarget
+              event.target ===
+              event.currentTarget
             ) {
               resetForm();
             }
@@ -885,10 +1372,13 @@ export default function Finance({ user }) {
                   <button
                     type="button"
                     onClick={() =>
-                      changeType("income")
+                      changeType(
+                        "income"
+                      )
                     }
                     className={`rounded-2xl py-3 text-sm font-medium transition ${
-                      form.type === "income"
+                      form.type ===
+                      "income"
                         ? "bg-green-500 text-white"
                         : "bg-white/10 text-white/60 hover:bg-white/15"
                     }`}
@@ -899,10 +1389,13 @@ export default function Finance({ user }) {
                   <button
                     type="button"
                     onClick={() =>
-                      changeType("expense")
+                      changeType(
+                        "expense"
+                      )
                     }
                     className={`rounded-2xl py-3 text-sm font-medium transition ${
-                      form.type === "expense"
+                      form.type ===
+                      "expense"
                         ? "bg-red-500 text-white"
                         : "bg-white/10 text-white/60 hover:bg-white/15"
                     }`}
@@ -917,14 +1410,19 @@ export default function Finance({ user }) {
                 <div>
 
                   <label className="mb-2 block text-xs text-white/40">
-                    Amount ({currentCurrency.code})
+                    Amount (
+                    {
+                      currentCurrency.code
+                    })
                   </label>
 
                   <input
                     type="number"
                     name="amount"
                     value={form.amount}
-                    onChange={handleChange}
+                    onChange={
+                      handleChange
+                    }
                     placeholder="5000"
                     min="0"
                     step="0.01"
@@ -945,16 +1443,24 @@ export default function Finance({ user }) {
 
                   <select
                     name="category"
-                    value={form.category}
-                    onChange={handleChange}
+                    value={
+                      form.category
+                    }
+                    onChange={
+                      handleChange
+                    }
                     className="w-full rounded-2xl border border-white/10 bg-[#181818] px-4 py-3 text-white outline-none"
                   >
 
                     {categories.map(
                       (category) => (
                         <option
-                          key={category}
-                          value={category}
+                          key={
+                            category
+                          }
+                          value={
+                            category
+                          }
                         >
                           {category}
                         </option>
@@ -976,8 +1482,12 @@ export default function Finance({ user }) {
                   <input
                     type="text"
                     name="description"
-                    value={form.description}
-                    onChange={handleChange}
+                    value={
+                      form.description
+                    }
+                    onChange={
+                      handleChange
+                    }
                     placeholder="Monthly salary"
                     className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-white/20 focus:border-white/30"
                   />
@@ -996,7 +1506,9 @@ export default function Finance({ user }) {
                     type="date"
                     name="date"
                     value={form.date}
-                    onChange={handleChange}
+                    onChange={
+                      handleChange
+                    }
                     required
                     className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none"
                   />
@@ -1009,7 +1521,8 @@ export default function Finance({ user }) {
                   type="submit"
                   disabled={saving}
                   className={`w-full rounded-2xl py-3 font-semibold transition disabled:opacity-50 ${
-                    form.type === "income"
+                    form.type ===
+                    "income"
                       ? "bg-green-500 hover:bg-green-400"
                       : "bg-red-500 hover:bg-red-400"
                   }`}
