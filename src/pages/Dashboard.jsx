@@ -133,9 +133,8 @@ export default function Dashboard({
 
   const exchangeCurrencyInfo = useMemo(() => {
     return (
-      CURRENCIES[
-        preferences.exchangeCurrency
-      ] || CURRENCIES.USD
+      CURRENCIES[preferences.exchangeCurrency] ||
+      CURRENCIES.USD
     );
   }, [preferences.exchangeCurrency]);
 
@@ -826,9 +825,7 @@ export default function Dashboard({
   return (
     <div className="min-h-screen text-white">
 
-      {/* =====================================================
-          HEADER
-      ====================================================== */}
+      {/* HEADER */}
 
       <div className="mb-8">
         <p className="mb-1 text-sm text-white/40">
@@ -863,7 +860,7 @@ export default function Dashboard({
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
 
-        {/* FINANCE */}
+        {/* TOTAL BALANCE */}
 
         {preferences.showFinance && (
           <button
@@ -873,15 +870,15 @@ export default function Dashboard({
             }
             className="group w-full text-left"
           >
-            <DashboardCard>
+            <DashboardCard color="green">
               <div className="flex items-start justify-between">
-                <CardIcon>
+                <CardIcon color="green">
                   <Wallet size={21} />
                 </CardIcon>
 
                 <ArrowUpRight
                   size={18}
-                  className="text-white/20 transition group-hover:text-white/70"
+                  className="text-white/20 transition group-hover:text-emerald-400"
                 />
               </div>
 
@@ -891,8 +888,7 @@ export default function Dashboard({
 
               <h2
                 className={`mt-2 text-3xl font-bold ${
-                  totalFinanceBalance.balance >=
-                  0
+                  totalFinanceBalance.balance >= 0
                     ? "text-emerald-400"
                     : "text-red-400"
                 }`}
@@ -902,7 +898,7 @@ export default function Dashboard({
                 )}
               </h2>
 
-              <div className="mt-3 flex gap-4 text-xs">
+              <div className="mt-3 flex flex-wrap gap-4 text-xs">
                 <span className="text-emerald-400">
                   +{" "}
                   {formatMoney(
@@ -931,15 +927,15 @@ export default function Dashboard({
             }
             className="group w-full text-left"
           >
-            <DashboardCard>
+            <DashboardCard color="blue">
               <div className="flex items-start justify-between">
-                <CardIcon>
+                <CardIcon color="blue">
                   <CheckSquare size={21} />
                 </CardIcon>
 
                 <ArrowUpRight
                   size={18}
-                  className="text-white/20 transition group-hover:text-white/70"
+                  className="text-white/20 transition group-hover:text-blue-400"
                 />
               </div>
 
@@ -947,7 +943,7 @@ export default function Dashboard({
                 Tasks pending
               </p>
 
-              <h2 className="mt-2 text-3xl font-bold">
+              <h2 className="mt-2 text-3xl font-bold text-blue-400">
                 {taskStats.pending}
               </h2>
 
@@ -968,15 +964,15 @@ export default function Dashboard({
             }
             className="group w-full text-left"
           >
-            <DashboardCard>
+            <DashboardCard color="blue">
               <div className="flex items-start justify-between">
-                <CardIcon>
+                <CardIcon color="blue">
                   <Target size={21} />
                 </CardIcon>
 
                 <ArrowUpRight
                   size={18}
-                  className="text-white/20 transition group-hover:text-white/70"
+                  className="text-white/20 transition group-hover:text-blue-400"
                 />
               </div>
 
@@ -984,7 +980,7 @@ export default function Dashboard({
                 Goal progress
               </p>
 
-              <h2 className="mt-2 text-3xl font-bold">
+              <h2 className="mt-2 text-3xl font-bold text-blue-400">
                 {goalStats.percentage}%
               </h2>
 
@@ -992,6 +988,7 @@ export default function Dashboard({
                 percentage={
                   goalStats.percentage
                 }
+                color="blue"
               />
             </DashboardCard>
           </button>
@@ -1007,15 +1004,15 @@ export default function Dashboard({
             }
             className="group w-full text-left"
           >
-            <DashboardCard>
+            <DashboardCard color="green">
               <div className="flex items-start justify-between">
-                <CardIcon>
+                <CardIcon color="green">
                   <Repeat size={21} />
                 </CardIcon>
 
                 <ArrowUpRight
                   size={18}
-                  className="text-white/20 transition group-hover:text-white/70"
+                  className="text-white/20 transition group-hover:text-emerald-400"
                 />
               </div>
 
@@ -1023,7 +1020,7 @@ export default function Dashboard({
                 Habits today
               </p>
 
-              <h2 className="mt-2 text-3xl font-bold">
+              <h2 className="mt-2 text-3xl font-bold text-emerald-400">
                 {habitStats.completedToday}/
                 {habitStats.total}
               </h2>
@@ -1041,14 +1038,16 @@ export default function Dashboard({
       ====================================================== */}
 
       {preferences.showFinance && (
-        <SectionCard className="mb-6">
-
+        <SectionCard
+          className="mb-6"
+          color="blue"
+        >
           <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
 
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-white/70">
+              <CardIcon color="blue">
                 <DollarSign size={20} />
-              </div>
+              </CardIcon>
 
               <div>
                 <h2 className="font-semibold">
@@ -1062,7 +1061,6 @@ export default function Dashboard({
             </div>
 
             <div className="relative">
-
               <button
                 type="button"
                 onClick={() =>
@@ -1071,11 +1069,11 @@ export default function Dashboard({
                       !previous
                   )
                 }
-                className="flex min-w-[150px] items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 transition hover:bg-white/[0.09]"
+                className="flex min-w-[150px] items-center justify-between gap-4 rounded-2xl border border-blue-400/20 bg-blue-500/5 px-4 py-3 transition hover:bg-blue-500/10"
               >
                 <div className="flex items-center gap-3">
 
-                  <span className="text-lg font-bold">
+                  <span className="text-lg font-bold text-blue-400">
                     {
                       exchangeCurrencyInfo.symbol
                     }
@@ -1106,12 +1104,11 @@ export default function Dashboard({
               </button>
 
               {exchangeOpen && (
-                <div className="absolute right-0 top-full z-30 mt-2 w-56 overflow-hidden rounded-2xl border border-white/10 bg-[#151515] p-2 shadow-2xl">
+                <div className="absolute right-0 top-full z-30 mt-2 w-56 overflow-hidden rounded-2xl border border-blue-400/20 bg-[#151515] p-2 shadow-2xl">
 
                   {Object.values(
                     CURRENCIES
                   ).map((currency) => {
-
                     const active =
                       preferences.exchangeCurrency ===
                       currency.code;
@@ -1127,14 +1124,13 @@ export default function Dashboard({
                         }
                         className={`flex w-full items-center justify-between rounded-xl px-3 py-3 text-left transition ${
                           active
-                            ? "bg-white/10"
+                            ? "bg-blue-500/15"
                             : "hover:bg-white/[0.06]"
                         }`}
                       >
-
                         <div className="flex items-center gap-3">
 
-                          <span className="w-7 text-center font-semibold">
+                          <span className="w-7 text-center font-semibold text-blue-400">
                             {currency.symbol}
                           </span>
 
@@ -1151,36 +1147,30 @@ export default function Dashboard({
                         </div>
 
                         {active && (
-                          <span className="text-emerald-400">
+                          <span className="text-blue-400">
                             <Check size={16} />
                           </span>
                         )}
-
                       </button>
                     );
                   })}
 
                 </div>
               )}
-
             </div>
-
           </div>
 
-          <div className="mt-5 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-5">
+          <div className="mt-5 rounded-2xl border border-blue-400/10 bg-blue-500/[0.03] p-5">
 
             {exchangeLoading ? (
-
               <div className="flex items-center gap-3">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/10 border-t-white/70" />
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/10 border-t-blue-400" />
 
                 <span className="text-sm text-white/40">
                   Loading exchange rate...
                 </span>
               </div>
-
             ) : exchangeError ? (
-
               <div>
                 <div className="flex items-center gap-2 text-red-400">
                   <RefreshCw size={16} />
@@ -1194,9 +1184,7 @@ export default function Dashboard({
                   Please check your internet connection and try again.
                 </p>
               </div>
-
             ) : exchangeRate !== null ? (
-
               <div>
                 <p className="text-sm text-white/40">
                   Current exchange rate
@@ -1215,7 +1203,7 @@ export default function Dashboard({
                     =
                   </span>
 
-                  <span className="text-2xl font-bold text-emerald-400">
+                  <span className="text-2xl font-bold text-blue-400">
                     {
                       currencyInfo.symbol
                     }{" "}
@@ -1230,7 +1218,7 @@ export default function Dashboard({
                     )}
                   </span>
 
-                  <span className="text-lg font-semibold text-emerald-400">
+                  <span className="text-lg font-semibold text-blue-400">
                     {
                       currencyInfo.code
                     }
@@ -1250,11 +1238,9 @@ export default function Dashboard({
                   )
                 </p>
               </div>
-
             ) : null}
 
           </div>
-
         </SectionCard>
       )}
 
@@ -1264,11 +1250,10 @@ export default function Dashboard({
 
       {(preferences.showFinance ||
         preferences.showTasks) && (
-
         <div className="mb-6 grid gap-5 lg:grid-cols-2">
 
           {preferences.showFinance && (
-            <SectionCard>
+            <SectionCard color="green">
 
               <SectionHeader
                 icon={<Wallet size={20} />}
@@ -1277,6 +1262,7 @@ export default function Dashboard({
                 action={() =>
                   goToPage("finance")
                 }
+                color="green"
               />
 
               <div className="grid grid-cols-2 gap-3">
@@ -1316,7 +1302,7 @@ export default function Dashboard({
                 onClick={() =>
                   goToPage("finance")
                 }
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-white/[0.05] px-4 py-3 text-sm text-white/50 transition hover:bg-white/[0.09] hover:text-white"
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500/10 px-4 py-3 text-sm text-emerald-400 transition hover:bg-emerald-500/15"
               >
                 Open Finance
                 <ArrowUpRight size={15} />
@@ -1326,7 +1312,7 @@ export default function Dashboard({
           )}
 
           {preferences.showTasks && (
-            <SectionCard>
+            <SectionCard color="blue">
 
               <SectionHeader
                 icon={
@@ -1337,12 +1323,13 @@ export default function Dashboard({
                 action={() =>
                   goToPage("tasks")
                 }
+                color="blue"
               />
 
               <div className="mb-4 h-3 overflow-hidden rounded-full bg-white/10">
 
                 <div
-                  className="h-full rounded-full bg-emerald-400 transition-all"
+                  className="h-full rounded-full bg-blue-400 transition-all"
                   style={{
                     width: `${taskStats.percentage}%`,
                   }}
@@ -1356,7 +1343,7 @@ export default function Dashboard({
                   {taskStats.completed} completed
                 </span>
 
-                <span className="text-emerald-400">
+                <span className="text-blue-400">
                   {taskStats.percentage}%
                 </span>
 
@@ -1367,7 +1354,7 @@ export default function Dashboard({
                 onClick={() =>
                   goToPage("tasks")
                 }
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-white/[0.05] px-4 py-3 text-sm text-white/50 transition hover:bg-white/[0.09] hover:text-white"
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-500/10 px-4 py-3 text-sm text-blue-400 transition hover:bg-blue-500/15"
               >
                 Open Tasks
                 <ArrowUpRight size={15} />
@@ -1384,7 +1371,10 @@ export default function Dashboard({
       ====================================================== */}
 
       {preferences.showFinance && (
-        <SectionCard className="mb-6">
+        <SectionCard
+          className="mb-6"
+          color="green"
+        >
 
           <SectionHeader
             icon={
@@ -1395,6 +1385,7 @@ export default function Dashboard({
             action={() =>
               goToPage("finance")
             }
+            color="green"
           />
 
           <div className="h-[300px] w-full">
@@ -1465,7 +1456,10 @@ export default function Dashboard({
       ====================================================== */}
 
       {preferences.showFinance && (
-        <SectionCard className="mb-6">
+        <SectionCard
+          className="mb-6"
+          color="red"
+        >
 
           <SectionHeader
             icon={
@@ -1476,14 +1470,12 @@ export default function Dashboard({
             action={() =>
               goToPage("finance")
             }
+            color="red"
           />
 
           {monthlyAnalytics.length === 0 ? (
-
             <EmptyState text="No expenses recorded this month." />
-
           ) : (
-
             <div className="space-y-5">
 
               {monthlyAnalytics.map(
@@ -1565,6 +1557,7 @@ export default function Dashboard({
               value={
                 fitnessStats.workouts
               }
+              color="green"
             />
           </button>
         )}
@@ -1584,6 +1577,7 @@ export default function Dashboard({
             value={
               upcomingEvents.length
             }
+            color="blue"
           />
         </button>
 
@@ -1601,6 +1595,7 @@ export default function Dashboard({
               value={
                 data.travel.length
               }
+              color="blue"
             />
           </button>
         )}
@@ -1620,6 +1615,7 @@ export default function Dashboard({
             value={
               data.notes.length
             }
+            color="blue"
           />
         </button>
 
@@ -1633,7 +1629,7 @@ export default function Dashboard({
 
         {/* EVENTS */}
 
-        <SectionCard>
+        <SectionCard color="blue">
 
           <SectionHeader
             icon={
@@ -1644,32 +1640,27 @@ export default function Dashboard({
             action={() =>
               goToPage("calendar")
             }
+            color="blue"
           />
 
           {upcomingEvents.length === 0 ? (
-
             <EmptyState text="No upcoming events." />
-
           ) : (
-
             <div className="space-y-3">
 
               {upcomingEvents.map(
                 (event) => (
-
                   <button
                     key={event.id}
                     type="button"
                     onClick={() =>
                       goToPage("calendar")
                     }
-                    className="group flex w-full items-center gap-3 rounded-2xl bg-white/[0.04] p-4 text-left transition hover:bg-white/[0.07]"
+                    className="group flex w-full items-center gap-3 rounded-2xl border border-blue-400/10 bg-blue-500/[0.03] p-4 text-left transition hover:bg-blue-500/[0.07]"
                   >
 
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10">
-
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
                       <Clock size={17} />
-
                     </div>
 
                     <div className="min-w-0 flex-1">
@@ -1687,16 +1678,14 @@ export default function Dashboard({
 
                     <ArrowUpRight
                       size={16}
-                      className="shrink-0 text-white/20 transition group-hover:text-white/60"
+                      className="shrink-0 text-white/20 transition group-hover:text-blue-400"
                     />
 
                   </button>
-
                 )
               )}
 
             </div>
-
           )}
 
         </SectionCard>
@@ -1704,7 +1693,7 @@ export default function Dashboard({
         {/* TRAVEL */}
 
         {preferences.showTravel && (
-          <SectionCard>
+          <SectionCard color="blue">
 
             <SectionHeader
               icon={<Map size={20} />}
@@ -1713,26 +1702,23 @@ export default function Dashboard({
               action={() =>
                 goToPage("travel")
               }
+              color="blue"
             />
 
             {upcomingTrips.length === 0 ? (
-
               <EmptyState text="No upcoming trips." />
-
             ) : (
-
               <div className="space-y-3">
 
                 {upcomingTrips.map(
                   (trip) => (
-
                     <button
                       key={trip.id}
                       type="button"
                       onClick={() =>
                         goToPage("travel")
                       }
-                      className="group w-full rounded-2xl bg-white/[0.04] p-4 text-left transition hover:bg-white/[0.07]"
+                      className="group w-full rounded-2xl border border-blue-400/10 bg-blue-500/[0.03] p-4 text-left transition hover:bg-blue-500/[0.07]"
                     >
 
                       <div className="flex items-center justify-between gap-3">
@@ -1745,7 +1731,7 @@ export default function Dashboard({
 
                         <ArrowUpRight
                           size={16}
-                          className="shrink-0 text-white/20 transition group-hover:text-white/60"
+                          className="shrink-0 text-white/20 transition group-hover:text-blue-400"
                         />
 
                       </div>
@@ -1763,12 +1749,10 @@ export default function Dashboard({
                       )}
 
                     </button>
-
                   )
                 )}
 
               </div>
-
             )}
 
           </SectionCard>
@@ -1780,7 +1764,10 @@ export default function Dashboard({
           NOTES
       ====================================================== */}
 
-      <SectionCard className="mt-5">
+      <SectionCard
+        className="mt-5"
+        color="blue"
+      >
 
         <SectionHeader
           icon={
@@ -1791,26 +1778,23 @@ export default function Dashboard({
           action={() =>
             goToPage("notes")
           }
+          color="blue"
         />
 
         {recentNotes.length === 0 ? (
-
           <EmptyState text="No notes yet." />
-
         ) : (
-
           <div className="grid gap-3 md:grid-cols-3">
 
             {recentNotes.map(
               (note) => (
-
                 <button
                   key={note.id}
                   type="button"
                   onClick={() =>
                     goToPage("notes")
                   }
-                  className="group rounded-2xl bg-white/[0.04] p-4 text-left transition hover:bg-white/[0.07]"
+                  className="group rounded-2xl border border-blue-400/10 bg-blue-500/[0.03] p-4 text-left transition hover:bg-blue-500/[0.07]"
                 >
 
                   <div className="flex items-start justify-between gap-3">
@@ -1822,7 +1806,7 @@ export default function Dashboard({
 
                     <ArrowUpRight
                       size={15}
-                      className="shrink-0 text-white/20 transition group-hover:text-white/60"
+                      className="shrink-0 text-white/20 transition group-hover:text-blue-400"
                     />
 
                   </div>
@@ -1834,12 +1818,10 @@ export default function Dashboard({
                   </p>
 
                 </button>
-
               )
             )}
 
           </div>
-
         )}
 
       </SectionCard>
@@ -1854,12 +1836,11 @@ export default function Dashboard({
         !preferences.showHabits &&
         !preferences.showFitness &&
         !preferences.showTravel && (
-
-          <div className="mt-6 rounded-3xl border border-white/10 bg-white/[0.03] p-8 text-center">
+          <div className="mt-6 rounded-3xl border border-blue-400/10 bg-blue-500/[0.03] p-8 text-center">
 
             <Settings2
               size={28}
-              className="mx-auto mb-3 text-white/20"
+              className="mx-auto mb-3 text-blue-400/40"
             />
 
             <h3 className="font-semibold">
@@ -1901,14 +1882,68 @@ function formatDate(date) {
 }
 
 // ===========================================================
+// COLOR HELPERS
+// ===========================================================
+
+function getCardColor(color) {
+  if (color === "green") {
+    return {
+      border:
+        "border-emerald-400/10",
+      background:
+        "bg-emerald-500/[0.025]",
+      hover:
+        "group-hover:border-emerald-400/25 group-hover:bg-emerald-500/[0.04]",
+    };
+  }
+
+  if (color === "red") {
+    return {
+      border:
+        "border-red-400/10",
+      background:
+        "bg-red-500/[0.025]",
+      hover:
+        "group-hover:border-red-400/25 group-hover:bg-red-500/[0.04]",
+    };
+  }
+
+  if (color === "blue") {
+    return {
+      border:
+        "border-blue-400/10",
+      background:
+        "bg-blue-500/[0.025]",
+      hover:
+        "group-hover:border-blue-400/25 group-hover:bg-blue-500/[0.04]",
+    };
+  }
+
+  return {
+    border:
+      "border-white/10",
+    background:
+      "bg-white/[0.04]",
+    hover:
+      "group-hover:border-white/20 group-hover:bg-white/[0.06]",
+  };
+}
+
+// ===========================================================
 // DASHBOARD CARD
 // ===========================================================
 
 function DashboardCard({
   children,
+  color = "default",
 }) {
+  const colors =
+    getCardColor(color);
+
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-xl shadow-black/10 backdrop-blur-2xl transition group-hover:border-white/20 group-hover:bg-white/[0.06]">
+    <div
+      className={`rounded-3xl border ${colors.border} ${colors.background} p-5 shadow-xl shadow-black/10 backdrop-blur-2xl transition ${colors.hover}`}
+    >
       {children}
     </div>
   );
@@ -1920,9 +1955,26 @@ function DashboardCard({
 
 function CardIcon({
   children,
+  color = "default",
 }) {
+  const classes = {
+    green:
+      "bg-emerald-500/10 text-emerald-400",
+    red:
+      "bg-red-500/10 text-red-400",
+    blue:
+      "bg-blue-500/10 text-blue-400",
+    default:
+      "bg-white/10 text-white/70",
+  };
+
   return (
-    <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white/70">
+    <div
+      className={`mb-5 flex h-11 w-11 items-center justify-center rounded-2xl ${
+        classes[color] ||
+        classes.default
+      }`}
+    >
       {children}
     </div>
   );
@@ -1935,10 +1987,14 @@ function CardIcon({
 function SectionCard({
   children,
   className = "",
+  color = "default",
 }) {
+  const colors =
+    getCardColor(color);
+
   return (
     <div
-      className={`rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-xl shadow-black/10 backdrop-blur-2xl sm:p-6 ${className}`}
+      className={`rounded-3xl border ${colors.border} ${colors.background} p-5 shadow-xl shadow-black/10 backdrop-blur-2xl sm:p-6 ${className}`}
     >
       {children}
     </div>
@@ -1954,13 +2010,41 @@ function SectionHeader({
   title,
   subtitle,
   action,
+  color = "default",
 }) {
+  const iconClasses = {
+    green:
+      "bg-emerald-500/10 text-emerald-400",
+    red:
+      "bg-red-500/10 text-red-400",
+    blue:
+      "bg-blue-500/10 text-blue-400",
+    default:
+      "bg-white/10 text-white/70",
+  };
+
+  const arrowClasses = {
+    green:
+      "hover:bg-emerald-500/10 hover:text-emerald-400",
+    red:
+      "hover:bg-red-500/10 hover:text-red-400",
+    blue:
+      "hover:bg-blue-500/10 hover:text-blue-400",
+    default:
+      "hover:bg-white/[0.1] hover:text-white",
+  };
+
   return (
     <div className="mb-6 flex items-center justify-between gap-3">
 
       <div className="flex items-center gap-3">
 
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white/70">
+        <div
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+            iconClasses[color] ||
+            iconClasses.default
+          }`}
+        >
           {icon}
         </div>
 
@@ -1982,7 +2066,10 @@ function SectionHeader({
         <button
           type="button"
           onClick={action}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/[0.05] text-white/30 transition hover:bg-white/[0.1] hover:text-white"
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/[0.05] text-white/30 transition ${
+            arrowClasses[color] ||
+            arrowClasses.default
+          }`}
           aria-label={`Open ${title}`}
         >
           <ArrowUpRight size={16} />
@@ -2006,7 +2093,15 @@ function MiniCard({
   currencyInfo,
 }) {
   return (
-    <div className="rounded-2xl bg-white/[0.04] p-4">
+    <div
+      className={`rounded-2xl p-4 ${
+        positive
+          ? "border border-emerald-400/10 bg-emerald-500/[0.04]"
+          : negative
+          ? "border border-red-400/10 bg-red-500/[0.04]"
+          : "bg-white/[0.04]"
+      }`}
+    >
 
       <div
         className={`flex items-center gap-2 text-xs ${
@@ -2033,7 +2128,6 @@ function MiniCard({
             : "text-white"
         }`}
       >
-
         {currencyInfo.symbol}{" "}
 
         {Number(
@@ -2045,7 +2139,6 @@ function MiniCard({
             maximumFractionDigits: 2,
           }
         )}
-
       </p>
 
     </div>
@@ -2060,17 +2153,72 @@ function QuickCard({
   icon,
   title,
   value,
+  color = "default",
 }) {
+  const colors = {
+    green: {
+      border:
+        "border-emerald-400/10",
+      bg:
+        "bg-emerald-500/[0.025]",
+      icon:
+        "text-emerald-400",
+      hover:
+        "group-hover:border-emerald-400/25 group-hover:bg-emerald-500/[0.04]",
+    },
+
+    red: {
+      border:
+        "border-red-400/10",
+      bg:
+        "bg-red-500/[0.025]",
+      icon:
+        "text-red-400",
+      hover:
+        "group-hover:border-red-400/25 group-hover:bg-red-500/[0.04]",
+    },
+
+    blue: {
+      border:
+        "border-blue-400/10",
+      bg:
+        "bg-blue-500/[0.025]",
+      icon:
+        "text-blue-400",
+      hover:
+        "group-hover:border-blue-400/25 group-hover:bg-blue-500/[0.04]",
+    },
+
+    default: {
+      border:
+        "border-white/10",
+      bg:
+        "bg-white/[0.04]",
+      icon:
+        "text-white/40",
+      hover:
+        "group-hover:border-white/20 group-hover:bg-white/[0.06]",
+    },
+  };
+
+  const current =
+    colors[color] ||
+    colors.default;
+
   return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-xl shadow-black/10 backdrop-blur-2xl transition group-hover:border-white/20 group-hover:bg-white/[0.06]">
+    <div
+      className={`rounded-3xl border ${current.border} ${current.bg} p-5 shadow-xl shadow-black/10 backdrop-blur-2xl transition ${current.hover}`}
+    >
 
-      <div className="mb-4 flex items-center justify-between text-white/40">
+      <div className="mb-4 flex items-center justify-between">
 
-        {icon}
+        <span className={current.icon}>
+          {icon}
+        </span>
 
         <ArrowUpRight
           size={16}
-          className="text-white/20 transition group-hover:text-white/60"
+          className={`text-white/20 transition group-hover:${current.icon}`}
         />
 
       </div>
@@ -2079,7 +2227,15 @@ function QuickCard({
         {title}
       </p>
 
-      <p className="mt-1 text-2xl font-bold">
+      <p className={`mt-1 text-2xl font-bold ${
+        color === "green"
+          ? "text-emerald-400"
+          : color === "red"
+          ? "text-red-400"
+          : color === "blue"
+          ? "text-blue-400"
+          : "text-white"
+      }`}>
         {value}
       </p>
 
@@ -2093,12 +2249,25 @@ function QuickCard({
 
 function ProgressBar({
   percentage,
+  color = "green",
 }) {
+  const barColor = {
+    green:
+      "bg-emerald-400",
+    red:
+      "bg-red-400",
+    blue:
+      "bg-blue-400",
+  };
+
   return (
     <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
 
       <div
-        className="h-full rounded-full bg-emerald-400 transition-all duration-500"
+        className={`h-full rounded-full transition-all duration-500 ${
+          barColor[color] ||
+          barColor.green
+        }`}
         style={{
           width: `${percentage}%`,
         }}
