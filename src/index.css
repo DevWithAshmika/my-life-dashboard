@@ -1,0 +1,636 @@
+@import "tailwindcss";
+
+/* =========================================================
+   BASE
+========================================================= */
+
+:root {
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Display",
+    "Segoe UI",
+    sans-serif;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+
+  background: #050505;
+  color: #ffffff;
+
+  transition:
+    background-color 250ms ease,
+    color 250ms ease;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+}
+
+
+/* =========================================================
+   DARK MODE
+========================================================= */
+
+html.dark {
+  color-scheme: dark;
+}
+
+html.dark body {
+  background: #050505;
+  color: #ffffff;
+}
+
+
+/* =========================================================
+   LIGHT MODE
+========================================================= */
+
+html.light {
+  color-scheme: light;
+}
+
+html.light body {
+  background: #f2f2f7;
+  color: #171717;
+}
+
+
+/* =========================================================
+   LIGHT MODE TEXT
+========================================================= */
+
+/* Main white text */
+
+html.light .text-white {
+  color: #171717 !important;
+}
+
+/* Secondary text */
+
+html.light .text-white\/95 {
+  color: rgba(23, 23, 23, 0.95) !important;
+}
+
+html.light .text-white\/90 {
+  color: rgba(23, 23, 23, 0.9) !important;
+}
+
+html.light .text-white\/80 {
+  color: rgba(23, 23, 23, 0.8) !important;
+}
+
+html.light .text-white\/70 {
+  color: rgba(23, 23, 23, 0.7) !important;
+}
+
+html.light .text-white\/60 {
+  color: rgba(23, 23, 23, 0.62) !important;
+}
+
+html.light .text-white\/50 {
+  color: rgba(23, 23, 23, 0.54) !important;
+}
+
+html.light .text-white\/40 {
+  color: rgba(23, 23, 23, 0.48) !important;
+}
+
+html.light .text-white\/35 {
+  color: rgba(23, 23, 23, 0.44) !important;
+}
+
+html.light .text-white\/30 {
+  color: rgba(23, 23, 23, 0.40) !important;
+}
+
+html.light .text-white\/25 {
+  color: rgba(23, 23, 23, 0.36) !important;
+}
+
+html.light .text-white\/20 {
+  color: rgba(23, 23, 23, 0.32) !important;
+}
+
+html.light .text-white\/15 {
+  color: rgba(23, 23, 23, 0.25) !important;
+}
+
+html.light .text-white\/10 {
+  color: rgba(23, 23, 23, 0.20) !important;
+}
+
+
+/* =========================================================
+   LIGHT MODE BACKGROUNDS
+========================================================= */
+
+html.light .bg-black {
+  background: #f2f2f7 !important;
+}
+
+html.light .bg-\[\#111\] {
+  background: rgba(255, 255, 255, 0.88) !important;
+}
+
+html.light .bg-\[\#181818\] {
+  background: #ffffff !important;
+}
+
+
+/* =========================================================
+   WHITE BACKGROUND BUTTONS
+========================================================= */
+
+html.light .bg-white {
+  background: #171717 !important;
+  color: #ffffff !important;
+}
+
+html.light .hover\:bg-white\/90:hover {
+  background: #2b2b2b !important;
+  color: #ffffff !important;
+}
+
+
+/* =========================================================
+   WHITE TRANSPARENT BACKGROUNDS
+========================================================= */
+
+html.light .bg-white\/5 {
+  background: rgba(0, 0, 0, 0.035) !important;
+}
+
+html.light .bg-white\/10 {
+  background: rgba(0, 0, 0, 0.055) !important;
+}
+
+html.light .bg-white\/20 {
+  background: rgba(0, 0, 0, 0.085) !important;
+}
+
+
+/* =========================================================
+   CUSTOM WHITE GLASS BACKGROUNDS
+========================================================= */
+
+html.light .bg-white\/\[0\.025\] {
+  background: rgba(255, 255, 255, 0.48) !important;
+}
+
+html.light .bg-white\/\[0\.03\] {
+  background: rgba(255, 255, 255, 0.55) !important;
+}
+
+html.light .bg-white\/\[0\.035\] {
+  background: rgba(255, 255, 255, 0.62) !important;
+}
+
+html.light .bg-white\/\[0\.04\] {
+  background: rgba(255, 255, 255, 0.68) !important;
+}
+
+html.light .bg-white\/\[0\.05\] {
+  background: rgba(255, 255, 255, 0.72) !important;
+}
+
+html.light .bg-white\/\[0\.06\] {
+  background: rgba(255, 255, 255, 0.78) !important;
+}
+
+html.light .bg-white\/\[0\.08\] {
+  background: rgba(255, 255, 255, 0.82) !important;
+}
+
+html.light .bg-white\/\[0\.10\] {
+  background: rgba(255, 255, 255, 0.88) !important;
+}
+
+
+/* =========================================================
+   LIGHT MODE BORDERS
+========================================================= */
+
+html.light .border-white\/5 {
+  border-color: rgba(0, 0, 0, 0.055) !important;
+}
+
+html.light .border-white\/10 {
+  border-color: rgba(0, 0, 0, 0.085) !important;
+}
+
+html.light .border-white\/20 {
+  border-color: rgba(0, 0, 0, 0.13) !important;
+}
+
+html.light .border-white\/30 {
+  border-color: rgba(0, 0, 0, 0.18) !important;
+}
+
+
+/* =========================================================
+   LIGHT MODE ICONS
+========================================================= */
+
+/*
+  Existing icons inherit text color.
+  This gives neutral icons a proper dark gray.
+*/
+
+html.light svg {
+  color: currentColor;
+}
+
+
+/* Neutral icon containers */
+
+html.light .bg-white\/5 svg,
+html.light .bg-white\/10 svg,
+html.light .bg-white\/20 svg {
+  color: #444444;
+}
+
+
+/* Preserve semantic colors */
+
+html.light .text-green-400 svg,
+html.light .text-green-500 svg {
+  color: inherit;
+}
+
+html.light .text-red-400 svg,
+html.light .text-red-500 svg {
+  color: inherit;
+}
+
+html.light .text-blue-400 svg,
+html.light .text-blue-500 svg {
+  color: inherit;
+}
+
+html.light .text-yellow-400 svg,
+html.light .text-yellow-500 svg {
+  color: inherit;
+}
+
+
+/* =========================================================
+   INPUTS
+========================================================= */
+
+html.light input,
+html.light textarea,
+html.light select {
+  color: #171717 !important;
+
+  background: rgba(255, 255, 255, 0.75) !important;
+
+  border-color: rgba(0, 0, 0, 0.1) !important;
+}
+
+html.light input::placeholder,
+html.light textarea::placeholder {
+  color: rgba(0, 0, 0, 0.32) !important;
+}
+
+html.light input:focus,
+html.light textarea:focus,
+html.light select:focus {
+  border-color: rgba(0, 0, 0, 0.25) !important;
+}
+
+
+/* =========================================================
+   SELECT
+========================================================= */
+
+html.light option {
+  background: #ffffff;
+  color: #171717;
+}
+
+
+/* =========================================================
+   DIVIDERS
+========================================================= */
+
+html.light .divide-white\/5 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(0, 0, 0, 0.07) !important;
+}
+
+
+/* =========================================================
+   GLASS
+========================================================= */
+
+.glass {
+  background: rgba(255, 255, 255, 0.045);
+
+  border: 1px solid rgba(255, 255, 255, 0.09);
+
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+.glass-soft {
+  background: rgba(255, 255, 255, 0.025);
+
+  border: 1px solid rgba(255, 255, 255, 0.065);
+
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.glass-hover {
+  transition:
+    transform 220ms ease,
+    background 220ms ease,
+    border-color 220ms ease,
+    box-shadow 220ms ease;
+}
+
+.glass-hover:hover {
+  background: rgba(255, 255, 255, 0.065);
+  border-color: rgba(255, 255, 255, 0.14);
+
+  transform: translateY(-2px);
+}
+
+
+/* =========================================================
+   LIGHT GLASS
+========================================================= */
+
+html.light .glass {
+  background: rgba(255, 255, 255, 0.68);
+
+  border-color: rgba(0, 0, 0, 0.075);
+
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.055),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+html.light .glass-soft {
+  background: rgba(255, 255, 255, 0.52);
+
+  border-color: rgba(0, 0, 0, 0.055);
+}
+
+html.light .glass-hover:hover {
+  background: rgba(255, 255, 255, 0.78);
+
+  border-color: rgba(0, 0, 0, 0.1);
+
+  box-shadow:
+    0 15px 40px rgba(0, 0, 0, 0.07);
+}
+
+
+/* =========================================================
+   SHADOW
+========================================================= */
+
+.glass-shadow {
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+html.light .glass-shadow {
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.08),
+    0 3px 12px rgba(0, 0, 0, 0.035),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+
+/* =========================================================
+   DASHBOARD BACKGROUND
+========================================================= */
+
+.dashboard-background {
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboard-background::before {
+  content: "";
+
+  position: fixed;
+
+  width: 500px;
+  height: 500px;
+
+  top: -250px;
+  right: -150px;
+
+  border-radius: 50%;
+
+  background: rgba(255, 255, 255, 0.025);
+
+  filter: blur(100px);
+
+  pointer-events: none;
+}
+
+.dashboard-background::after {
+  content: "";
+
+  position: fixed;
+
+  width: 450px;
+  height: 450px;
+
+  bottom: -250px;
+  left: -180px;
+
+  border-radius: 50%;
+
+  background: rgba(255, 255, 255, 0.02);
+
+  filter: blur(100px);
+
+  pointer-events: none;
+}
+
+
+/* =========================================================
+   LIGHT BACKGROUND
+========================================================= */
+
+html.light .dashboard-background::before {
+  background: rgba(255, 255, 255, 0.85);
+}
+
+html.light .dashboard-background::after {
+  background: rgba(255, 255, 255, 0.65);
+}
+
+
+/* =========================================================
+   RED / GREEN CARDS
+========================================================= */
+
+html.light .bg-green-500\/5 {
+  background: rgba(34, 197, 94, 0.055) !important;
+}
+
+html.light .bg-green-500\/10 {
+  background: rgba(34, 197, 94, 0.1) !important;
+}
+
+html.light .bg-red-500\/5 {
+  background: rgba(239, 68, 68, 0.055) !important;
+}
+
+html.light .bg-red-500\/10 {
+  background: rgba(239, 68, 68, 0.1) !important;
+}
+
+
+/* =========================================================
+   GREEN / RED BORDERS
+========================================================= */
+
+html.light .border-green-500\/20 {
+  border-color: rgba(34, 197, 94, 0.2) !important;
+}
+
+html.light .border-red-500\/20 {
+  border-color: rgba(239, 68, 68, 0.2) !important;
+}
+
+
+/* =========================================================
+   MODAL BACKDROP
+========================================================= */
+
+html.light .bg-black\/70 {
+  background: rgba(0, 0, 0, 0.45) !important;
+}
+
+
+/* =========================================================
+   PAGE ANIMATION
+========================================================= */
+
+.page-enter {
+  animation: pageEnter 350ms ease-out;
+}
+
+@keyframes pageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+
+/* =========================================================
+   BUTTON PRESS
+========================================================= */
+
+.press {
+  transition: transform 120ms ease;
+}
+
+.press:active {
+  transform: scale(0.97);
+}
+
+
+/* =========================================================
+   SAFE AREA
+========================================================= */
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+
+/* =========================================================
+   SCROLLBAR
+========================================================= */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+html.light::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.14);
+}
+
+html.light::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.22);
+}
+
+
+/* =========================================================
+   SMOOTH THEME TRANSITION
+========================================================= */
+
+body,
+main,
+section,
+aside,
+nav,
+header,
+button,
+input,
+textarea,
+select {
+  transition:
+    background-color 250ms ease,
+    border-color 250ms ease,
+    color 250ms ease,
+    box-shadow 250ms ease;
+}
