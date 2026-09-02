@@ -4,19 +4,14 @@ import {
   Settings2,
   Save,
   Check,
-  Wallet,
   Eye,
   EyeOff,
-  DollarSign,
-  Palette,
   Bell,
   User,
   ShieldCheck,
   LogOut,
   Database,
   RotateCcw,
-  Sun,
-  Moon,
   CheckCircle2,
   AlertTriangle,
 } from "lucide-react";
@@ -39,58 +34,6 @@ import { db, auth } from "../firebase/config";
 import Loading from "../components/Loading";
 
 // ===========================================================
-// CURRENCIES
-// ===========================================================
-
-const CURRENCIES = [
-  {
-    code: "LKR",
-    symbol: "Rs.",
-    name: "Sri Lankan Rupee",
-  },
-  {
-    code: "USD",
-    symbol: "$",
-    name: "US Dollar",
-  },
-  {
-    code: "EUR",
-    symbol: "€",
-    name: "Euro",
-  },
-  {
-    code: "GBP",
-    symbol: "£",
-    name: "British Pound",
-  },
-];
-
-// ===========================================================
-// COLOR THEMES
-// ===========================================================
-
-const ACCENT_COLORS = [
-  {
-    id: "green",
-    name: "Green",
-    description: "Fresh and balanced",
-    className: "bg-green-500",
-  },
-  {
-    id: "red",
-    name: "Red",
-    description: "Bold and powerful",
-    className: "bg-red-500",
-  },
-  {
-    id: "blue",
-    name: "Blue",
-    description: "Clean and professional",
-    className: "bg-blue-500",
-  },
-];
-
-// ===========================================================
 // MAIN SETTINGS
 // ===========================================================
 
@@ -104,12 +47,6 @@ export default function Settings({ user }) {
   );
 
   const [settings, setSettings] = useState({
-    currency: "LKR",
-    exchangeCurrency: "USD",
-
-    theme: "dark",
-    accentColor: "green",
-
     notifications: true,
     taskNotifications: true,
     goalNotifications: true,
@@ -153,28 +90,6 @@ export default function Settings({ user }) {
           const data = snapshot.data();
 
           setSettings({
-            currency:
-              typeof data.currency === "string"
-                ? data.currency
-                : "LKR",
-
-            exchangeCurrency:
-              typeof data.exchangeCurrency === "string"
-                ? data.exchangeCurrency
-                : "USD",
-
-            theme:
-              data.theme === "light"
-                ? "light"
-                : "dark",
-
-            accentColor:
-              ["green", "red", "blue"].includes(
-                data.accentColor
-              )
-                ? data.accentColor
-                : "green",
-
             notifications:
               data.notifications !== false,
 
@@ -354,12 +269,6 @@ export default function Settings({ user }) {
     if (!confirmed) return;
 
     const defaultSettings = {
-      currency: "LKR",
-      exchangeCurrency: "USD",
-
-      theme: "dark",
-      accentColor: "green",
-
       notifications: true,
       taskNotifications: true,
       goalNotifications: true,
@@ -502,12 +411,6 @@ export default function Settings({ user }) {
     );
   }
 
-  const selectedCurrency =
-    CURRENCIES.find(
-      (item) =>
-        item.code === settings.currency
-    ) || CURRENCIES[0];
-
   // =========================================================
   // UI
   // =========================================================
@@ -644,279 +547,6 @@ export default function Settings({ user }) {
                 </p>
 
               </div>
-
-            </div>
-
-          </div>
-
-        </SectionCard>
-
-        {/* ===================================================
-            MAIN CURRENCY
-        ==================================================== */}
-
-        <SectionCard>
-
-          <SectionHeader
-            icon={<Wallet size={20} />}
-            title="Main Currency"
-            subtitle="Used throughout Finance and Dashboard."
-          />
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-
-            {CURRENCIES.map((currency) => {
-
-              const active =
-                settings.currency ===
-                currency.code;
-
-              return (
-                <button
-                  key={currency.code}
-                  type="button"
-                  onClick={() =>
-                    handleChange(
-                      "currency",
-                      currency.code
-                    )
-                  }
-                  className={`rounded-2xl border p-4 text-left transition ${
-                    active
-                      ? "border-white/30 bg-white/10"
-                      : "border-white/10 bg-white/[0.025] hover:bg-white/[0.06]"
-                  }`}
-                >
-
-                  <div className="flex items-center justify-between">
-
-                    <span className="text-xl font-bold">
-                      {currency.symbol}
-                    </span>
-
-                    {active && (
-                      <Check
-                        size={18}
-                        className="text-emerald-400"
-                      />
-                    )}
-
-                  </div>
-
-                  <p className="mt-3 font-semibold">
-                    {currency.code}
-                  </p>
-
-                  <p className="mt-1 text-xs text-white/30">
-                    {currency.name}
-                  </p>
-
-                </button>
-              );
-            })}
-
-          </div>
-
-          <div className="mt-4 rounded-2xl bg-white/[0.025] p-4">
-
-            <p className="text-xs text-white/30">
-              Current application currency
-            </p>
-
-            <p className="mt-1 font-semibold">
-              {selectedCurrency.symbol}{" "}
-              {selectedCurrency.code}
-            </p>
-
-          </div>
-
-        </SectionCard>
-
-        {/* ===================================================
-            EXCHANGE CURRENCY
-        ==================================================== */}
-
-        <SectionCard>
-
-          <SectionHeader
-            icon={<DollarSign size={20} />}
-            title="Exchange Rate Currency"
-            subtitle="Choose the currency used for exchange information."
-          />
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-
-            {CURRENCIES.map((currency) => {
-
-              const active =
-                settings.exchangeCurrency ===
-                currency.code;
-
-              return (
-                <button
-                  key={currency.code}
-                  type="button"
-                  onClick={() =>
-                    handleChange(
-                      "exchangeCurrency",
-                      currency.code
-                    )
-                  }
-                  className={`rounded-2xl border p-4 text-left transition ${
-                    active
-                      ? "border-emerald-400/40 bg-emerald-400/10"
-                      : "border-white/10 bg-white/[0.025] hover:bg-white/[0.06]"
-                  }`}
-                >
-
-                  <div className="flex items-center justify-between">
-
-                    <span className="text-xl font-bold">
-                      {currency.symbol}
-                    </span>
-
-                    {active && (
-                      <Check
-                        size={18}
-                        className="text-emerald-400"
-                      />
-                    )}
-
-                  </div>
-
-                  <p className="mt-3 font-semibold">
-                    {currency.code}
-                  </p>
-
-                  <p className="mt-1 text-xs text-white/30">
-                    {currency.name}
-                  </p>
-
-                </button>
-              );
-            })}
-
-          </div>
-
-        </SectionCard>
-
-        {/* ===================================================
-            APPEARANCE
-        ==================================================== */}
-
-        <SectionCard>
-
-          <SectionHeader
-            icon={<Palette size={20} />}
-            title="Appearance"
-            subtitle="Customize the look of your dashboard."
-          />
-
-          {/* THEME */}
-
-          <div className="mb-6">
-
-            <p className="mb-3 text-sm font-medium">
-              Theme
-            </p>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-
-              <ThemeButton
-                active={
-                  settings.theme === "dark"
-                }
-                icon={<Moon size={19} />}
-                title="Dark"
-                description="Dark premium interface"
-                onClick={() =>
-                  handleChange(
-                    "theme",
-                    "dark"
-                  )
-                }
-              />
-
-              <ThemeButton
-                active={
-                  settings.theme === "light"
-                }
-                icon={<Sun size={19} />}
-                title="Light"
-                description="Bright clean interface"
-                onClick={() =>
-                  handleChange(
-                    "theme",
-                    "light"
-                  )
-                }
-              />
-
-            </div>
-
-          </div>
-
-          {/* ACCENT COLOR */}
-
-          <div>
-
-            <p className="mb-3 text-sm font-medium">
-              Dashboard Color
-            </p>
-
-            <div className="grid gap-3 sm:grid-cols-3">
-
-              {ACCENT_COLORS.map(
-                (color) => {
-
-                  const active =
-                    settings.accentColor ===
-                    color.id;
-
-                  return (
-                    <button
-                      key={color.id}
-                      type="button"
-                      onClick={() =>
-                        handleChange(
-                          "accentColor",
-                          color.id
-                        )
-                      }
-                      className={`rounded-2xl border p-4 text-left transition ${
-                        active
-                          ? "border-white/30 bg-white/10"
-                          : "border-white/10 bg-white/[0.025] hover:bg-white/[0.06]"
-                      }`}
-                    >
-
-                      <div className="flex items-center justify-between">
-
-                        <div
-                          className={`h-7 w-7 rounded-full ${color.className}`}
-                        />
-
-                        {active && (
-                          <Check
-                            size={18}
-                            className="text-white"
-                          />
-                        )}
-
-                      </div>
-
-                      <p className="mt-4 font-semibold">
-                        {color.name}
-                      </p>
-
-                      <p className="mt-1 text-xs text-white/30">
-                        {color.description}
-                      </p>
-
-                    </button>
-                  );
-                }
-              )}
 
             </div>
 
@@ -1401,55 +1031,6 @@ function SectionHeader({
       </div>
 
     </div>
-  );
-}
-
-// ===========================================================
-// THEME BUTTON
-// ===========================================================
-
-function ThemeButton({
-  active,
-  icon,
-  title,
-  description,
-  onClick,
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex items-center gap-4 rounded-2xl border p-4 text-left transition ${
-        active
-          ? "border-white/30 bg-white/10"
-          : "border-white/10 bg-white/[0.025] hover:bg-white/[0.06]"
-      }`}
-    >
-
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10">
-        {icon}
-      </div>
-
-      <div className="flex-1">
-
-        <p className="font-medium">
-          {title}
-        </p>
-
-        <p className="mt-1 text-xs text-white/30">
-          {description}
-        </p>
-
-      </div>
-
-      {active && (
-        <Check
-          size={18}
-          className="text-emerald-400"
-        />
-      )}
-
-    </button>
   );
 }
 
