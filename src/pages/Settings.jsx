@@ -34,6 +34,30 @@ import { db, auth } from "../firebase/config";
 import Loading from "../components/Loading";
 
 // ===========================================================
+// DEFAULT SETTINGS
+// ===========================================================
+
+const DEFAULT_SETTINGS = {
+  notifications: true,
+
+  taskNotifications: true,
+  goalNotifications: true,
+  habitNotifications: true,
+  financeNotifications: true,
+
+  showFinance: true,
+  showTasks: true,
+  showGoals: true,
+  showHabits: true,
+  showFitness: true,
+  showTravel: true,
+
+  compactDashboard: false,
+  showWelcomeMessage: true,
+  showRecentActivity: true,
+};
+
+// ===========================================================
 // MAIN SETTINGS
 // ===========================================================
 
@@ -46,24 +70,9 @@ export default function Settings({ user }) {
     user?.displayName || ""
   );
 
-  const [settings, setSettings] = useState({
-    notifications: true,
-    taskNotifications: true,
-    goalNotifications: true,
-    habitNotifications: true,
-    financeNotifications: true,
-
-    showFinance: true,
-    showTasks: true,
-    showGoals: true,
-    showHabits: true,
-    showFitness: true,
-    showTravel: true,
-
-    compactDashboard: false,
-    showWelcomeMessage: true,
-    showRecentActivity: true,
-  });
+  const [settings, setSettings] = useState(
+    DEFAULT_SETTINGS
+  );
 
   // =========================================================
   // LOAD SETTINGS
@@ -208,6 +217,10 @@ export default function Settings({ user }) {
         settingsRef,
         {
           ...settings,
+
+          // Project is permanently dark mode.
+          theme: "dark",
+
           updatedAt: new Date(),
         },
         {
@@ -268,26 +281,9 @@ export default function Settings({ user }) {
 
     if (!confirmed) return;
 
-    const defaultSettings = {
-      notifications: true,
-      taskNotifications: true,
-      goalNotifications: true,
-      habitNotifications: true,
-      financeNotifications: true,
-
-      showFinance: true,
-      showTasks: true,
-      showGoals: true,
-      showHabits: true,
-      showFitness: true,
-      showTravel: true,
-
-      compactDashboard: false,
-      showWelcomeMessage: true,
-      showRecentActivity: true,
-    };
-
     try {
+      setSaving(true);
+
       const settingsRef = doc(
         db,
         "users",
@@ -299,7 +295,11 @@ export default function Settings({ user }) {
       await setDoc(
         settingsRef,
         {
-          ...defaultSettings,
+          ...DEFAULT_SETTINGS,
+
+          // Always dark mode.
+          theme: "dark",
+
           updatedAt: new Date(),
         },
         {
@@ -307,7 +307,9 @@ export default function Settings({ user }) {
         }
       );
 
-      setSettings(defaultSettings);
+      setSettings(DEFAULT_SETTINGS);
+
+      setSaved(false);
 
       alert("Settings reset successfully.");
     } catch (error) {
@@ -317,6 +319,8 @@ export default function Settings({ user }) {
       );
 
       alert("Could not reset settings.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -861,7 +865,8 @@ export default function Settings({ user }) {
             <button
               type="button"
               onClick={resetSettings}
-              className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.025] p-4 text-left transition hover:bg-white/[0.06]"
+              disabled={saving}
+              className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.025] p-4 text-left transition hover:bg-white/[0.06] disabled:opacity-50"
             >
 
               <div className="flex items-center gap-3">
@@ -949,6 +954,7 @@ export default function Settings({ user }) {
             ) : (
               <>
                 <Save size={18} />
+
                 {saving
                   ? "Saving..."
                   : "Save Settings"}

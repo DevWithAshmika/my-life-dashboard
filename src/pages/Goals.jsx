@@ -12,6 +12,8 @@ import {
   AlertCircle,
   Wallet,
   ChevronDown,
+  Bell,
+  BellOff,
 } from "lucide-react";
 
 import {
@@ -26,6 +28,11 @@ import {
 
 import { db } from "../firebase/config";
 import Loading from "../components/Loading";
+
+import {
+  scheduleGoalNotification,
+  cancelGoalNotification,
+} from "../utils/notifications";
 
 // ===========================================================
 // CURRENCIES
@@ -83,6 +90,8 @@ const getDefaultForm = () => ({
   currentAmount: "",
   deadline: "",
   category: "Savings",
+  reminderEnabled: false,
+  reminderTime: "09:00",
 });
 
 // ===========================================================
@@ -90,36 +99,16 @@ const getDefaultForm = () => ({
 // ===========================================================
 
 export default function Goals({ user }) {
-  // =========================================================
-  // DATA
-  // =========================================================
-
   const [goals, setGoals] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // =========================================================
-  // CURRENCY
-  // =========================================================
-
   const [currency, setCurrency] = useState("LKR");
-
-  // =========================================================
-  // MODAL
-  // =========================================================
 
   const [showModal, setShowModal] = useState(false);
   const [editingGoal, setEditingGoal] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  // =========================================================
-  // SEARCH
-  // =========================================================
-
   const [search, setSearch] = useState("");
-
-  // =========================================================
-  // FORM
-  // =========================================================
 
   const [form, setForm] = useState(
     getDefaultForm()
@@ -176,16 +165,6 @@ export default function Goals({ user }) {
       "goals"
     );
 
-    /*
-      IMPORTANT:
-      Do not use orderBy("createdAt") here.
-
-      Older goal documents may not have createdAt.
-      Also, Firebase may require an index.
-
-      We sort safely on the client instead.
-    */
-
     const unsubscribe = onSnapshot(
       goalsRef,
       (snapshot) => {
@@ -197,13 +176,10 @@ export default function Goals({ user }) {
         );
 
         data.sort((a, b) => {
-          const aTime =
-            getTimestampValue(a.createdAt);
-
-          const bTime =
-            getTimestampValue(b.createdAt);
-
-          return bTime - aTime;
+          return (
+            getTimestampValue(b.createdAt) -
+            getTimestampValue(a.createdAt)
+          );
         });
 
         setGoals(data);
@@ -224,7 +200,7 @@ export default function Goals({ user }) {
   }, [user?.uid]);
 
   // =========================================================
-  // LOAD CURRENCY FROM SETTINGS
+  // LOAD CURRENCY
   // =========================================================
 
   useEffect(() => {
@@ -274,7 +250,7 @@ export default function Goals({ user }) {
   }, [user?.uid]);
 
   // =========================================================
-  // FILTERED GOALS
+  // FILTER
   // =========================================================
 
   const filteredGoals = useMemo(() => {
@@ -317,17 +293,13 @@ export default function Goals({ user }) {
 
     const target = goals.reduce(
       (sum, goal) =>
-        sum + Number(
-          goal.targetAmount || 0
-        ),
+        sum + Number(goal.targetAmount || 0),
       0
     );
 
     const saved = goals.reduce(
       (sum, goal) =>
-        sum + Number(
-          goal.currentAmount || 0
-        ),
+        sum + Number(goal.currentAmount || 0),
       0
     );
 
@@ -341,7 +313,7 @@ export default function Goals({ user }) {
   }, [goals]);
 
   // =========================================================
-  // RESET FORM
+  // RESET
   // =========================================================
 
   const resetForm = () => {
@@ -350,7 +322,7 @@ export default function Goals({ user }) {
   };
 
   // =========================================================
-  // OPEN ADD
+  // ADD
   // =========================================================
 
   const openAddModal = () => {
@@ -359,7 +331,7 @@ export default function Goals({ user }) {
   };
 
   // =========================================================
-  // OPEN EDIT
+  // EDIT
   // =========================================================
 
   const openEditModal = (goal) => {
@@ -367,23 +339,22 @@ export default function Goals({ user }) {
 
     setForm({
       title: goal.title || "",
-      description:
-        goal.description || "",
-      targetAmount:
-        goal.targetAmount ?? "",
-      currentAmount:
-        goal.currentAmount ?? "",
-      deadline:
-        goal.deadline || "",
-      category:
-        goal.category || "Savings",
+      description: goal.description || "",
+      targetAmount: goal.targetAmount ?? "",
+      currentAmount: goal.currentAmount ?? "",
+      deadline: goal.deadline || "",
+      category: goal.category || "Savings",
+      reminderEnabled:
+        goal.reminderEnabled === true,
+      reminderTime:
+        goal.reminderTime || "09:00",
     });
 
     setShowModal(true);
   };
 
   // =========================================================
-  // CLOSE MODAL
+  // CLOSE
   // =========================================================
 
   const closeModal = () => {
@@ -396,23 +367,28 @@ export default function Goals({ user }) {
   };
 
   // =========================================================
-  // FORM CHANGE
+  // CHANGE
   // =========================================================
 
   const handleChange = (event) => {
     const {
       name,
       value,
+      type,
+      checked,
     } = event.target;
 
     setForm((previous) => ({
       ...previous,
-      [name]: value,
+      [name]:
+        type === "checkbox"
+          ? checked
+          : value,
     }));
   };
 
   // =========================================================
-  // SAVE GOAL
+  // SAVE
   // =========================================================
 
   const handleSubmit = async (event) => {
@@ -423,8 +399,7 @@ export default function Goals({ user }) {
       return;
     }
 
-    const title =
-      form.title.trim();
+    const title = form.title.trim();
 
     const targetAmount =
       Number(form.targetAmount);
@@ -432,21 +407,13 @@ export default function Goals({ user }) {
     const currentAmount =
       Number(form.currentAmount || 0);
 
-    // -------------------------------------------------------
-    // VALIDATION
-    // -------------------------------------------------------
-
     if (!title) {
-      alert(
-        "Please enter a goal name."
-      );
+      alert("Please enter a goal name.");
       return;
     }
 
     if (
-      !Number.isFinite(
-        targetAmount
-      ) ||
+      !Number.isFinite(targetAmount) ||
       targetAmount <= 0
     ) {
       alert(
@@ -456,9 +423,7 @@ export default function Goals({ user }) {
     }
 
     if (
-      !Number.isFinite(
-        currentAmount
-      ) ||
+      !Number.isFinite(currentAmount) ||
       currentAmount < 0
     ) {
       alert(
@@ -467,9 +432,32 @@ export default function Goals({ user }) {
       return;
     }
 
+    if (
+      form.reminderEnabled &&
+      !form.deadline
+    ) {
+      alert(
+        "Please select a deadline before enabling the reminder."
+      );
+      return;
+    }
+
+    if (
+      form.reminderEnabled &&
+      !form.reminderTime
+    ) {
+      alert(
+        "Please select a reminder time."
+      );
+      return;
+    }
+
     setSaving(true);
 
     try {
+      const completed =
+        currentAmount >= targetAmount;
+
       const goalData = {
         title,
         description:
@@ -480,13 +468,20 @@ export default function Goals({ user }) {
           form.deadline || "",
         category:
           form.category || "Other",
+
+        reminderEnabled:
+          form.reminderEnabled && !completed,
+
+        reminderTime:
+          form.reminderTime || "09:00",
+
         updatedAt:
           serverTimestamp(),
       };
 
-      // -----------------------------------------------------
+      // =====================================================
       // UPDATE
-      // -----------------------------------------------------
+      // =====================================================
 
       if (editingGoal) {
         const goalRef = doc(
@@ -501,14 +496,31 @@ export default function Goals({ user }) {
           goalRef,
           goalData
         );
+
+        await cancelGoalNotification(
+          editingGoal.id
+        );
+
+        if (
+          goalData.reminderEnabled &&
+          goalData.deadline
+        ) {
+          await scheduleGoalNotification({
+            id: editingGoal.id,
+            title: goalData.title,
+            deadline: goalData.deadline,
+            reminderTime:
+              goalData.reminderTime,
+          });
+        }
       }
 
-      // -----------------------------------------------------
+      // =====================================================
       // CREATE
-      // -----------------------------------------------------
+      // =====================================================
 
       else {
-        await addDoc(
+        const newGoal = await addDoc(
           collection(
             db,
             "users",
@@ -521,6 +533,19 @@ export default function Goals({ user }) {
               serverTimestamp(),
           }
         );
+
+        if (
+          goalData.reminderEnabled &&
+          goalData.deadline
+        ) {
+          await scheduleGoalNotification({
+            id: newGoal.id,
+            title: goalData.title,
+            deadline: goalData.deadline,
+            reminderTime:
+              goalData.reminderTime,
+          });
+        }
       }
 
       setShowModal(false);
@@ -532,7 +557,7 @@ export default function Goals({ user }) {
       );
 
       alert(
-        "Could not save the goal. Check Firebase configuration."
+        "Could not save the goal."
       );
     } finally {
       setSaving(false);
@@ -558,6 +583,10 @@ export default function Goals({ user }) {
     }
 
     try {
+      await cancelGoalNotification(
+        goal.id
+      );
+
       await deleteDoc(
         doc(
           db,
@@ -598,10 +627,6 @@ export default function Goals({ user }) {
   return (
     <div className="min-h-screen pb-28 text-white sm:pb-0">
 
-      {/* =====================================================
-          HEADER
-      ====================================================== */}
-
       <div className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
 
         <div>
@@ -629,10 +654,6 @@ export default function Goals({ user }) {
 
       </div>
 
-      {/* =====================================================
-          CURRENCY
-      ====================================================== */}
-
       <div className="mb-5 flex items-center justify-between rounded-2xl border border-white/[0.07] bg-white/[0.035] px-4 py-3 backdrop-blur-xl">
 
         <div>
@@ -651,63 +672,37 @@ export default function Goals({ user }) {
 
       </div>
 
-      {/* =====================================================
-          STATISTICS
-      ====================================================== */}
-
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
 
         <StatCard
-          icon={
-            <Target size={20} />
-          }
+          icon={<Target size={20} />}
           title="Total Goals"
-          value={
-            statistics.total
-          }
+          value={statistics.total}
           color="blue"
         />
 
         <StatCard
-          icon={
-            <Clock3 size={20} />
-          }
+          icon={<Clock3 size={20} />}
           title="Active Goals"
-          value={
-            statistics.active
-          }
+          value={statistics.active}
           color="blue"
         />
 
         <StatCard
-          icon={
-            <CheckCircle2
-              size={20}
-            />
-          }
+          icon={<CheckCircle2 size={20} />}
           title="Completed"
-          value={
-            statistics.completed
-          }
+          value={statistics.completed}
           color="green"
         />
 
         <StatCard
-          icon={
-            <Wallet size={20} />
-          }
+          icon={<Wallet size={20} />}
           title="Total Saved"
-          value={money(
-            statistics.saved
-          )}
+          value={money(statistics.saved)}
           color="green"
         />
 
       </div>
-
-      {/* =====================================================
-          SEARCH
-      ====================================================== */}
 
       <div className="mb-6">
 
@@ -723,9 +718,7 @@ export default function Goals({ user }) {
             placeholder="Search goals..."
             value={search}
             onChange={(event) =>
-              setSearch(
-                event.target.value
-              )
+              setSearch(event.target.value)
             }
             className="w-full rounded-2xl border border-white/10 bg-white/[0.04] py-3 pl-11 pr-4 text-sm text-white outline-none placeholder:text-white/25 transition focus:border-blue-400/40 focus:bg-blue-500/[0.03]"
           />
@@ -733,10 +726,6 @@ export default function Goals({ user }) {
         </div>
 
       </div>
-
-      {/* =====================================================
-          GOALS
-      ====================================================== */}
 
       {filteredGoals.length === 0 ? (
 
@@ -749,53 +738,33 @@ export default function Goals({ user }) {
 
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
 
-          {filteredGoals.map(
-            (goal) => (
-              <GoalCard
-                key={goal.id}
-                goal={goal}
-                money={money}
-                onEdit={() =>
-                  openEditModal(
-                    goal
-                  )
-                }
-                onDelete={() =>
-                  handleDelete(
-                    goal
-                  )
-                }
-              />
-            )
-          )}
+          {filteredGoals.map((goal) => (
+            <GoalCard
+              key={goal.id}
+              goal={goal}
+              money={money}
+              onEdit={() =>
+                openEditModal(goal)
+              }
+              onDelete={() =>
+                handleDelete(goal)
+              }
+            />
+          ))}
 
         </div>
 
       )}
 
-      {/* =====================================================
-          MODAL
-      ====================================================== */}
-
       {showModal && (
         <GoalModal
           form={form}
-          editingGoal={
-            editingGoal
-          }
+          editingGoal={editingGoal}
           saving={saving}
-          currency={
-            currentCurrency
-          }
-          onChange={
-            handleChange
-          }
-          onSubmit={
-            handleSubmit
-          }
-          onClose={
-            closeModal
-          }
+          currency={currentCurrency}
+          onChange={handleChange}
+          onSubmit={handleSubmit}
+          onClose={closeModal}
         />
       )}
 
@@ -813,19 +782,16 @@ function GoalCard({
   onEdit,
   onDelete,
 }) {
-  const progress =
-    getProgress(goal);
+  const progress = getProgress(goal);
 
   const completed =
     progress >= 100;
 
-  const target = Number(
-    goal.targetAmount || 0
-  );
+  const target =
+    Number(goal.targetAmount || 0);
 
-  const current = Number(
-    goal.currentAmount || 0
-  );
+  const current =
+    Number(goal.currentAmount || 0);
 
   const remaining = Math.max(
     target - current,
@@ -833,17 +799,11 @@ function GoalCard({
   );
 
   const deadlineInfo =
-    getDeadlineInfo(
-      goal.deadline
-    );
+    getDeadlineInfo(goal.deadline);
 
   const isOverdue =
     !completed &&
     deadlineInfo?.overdue;
-
-  // ---------------------------------------------------------
-  // THEME
-  // ---------------------------------------------------------
 
   const theme = completed
     ? {
@@ -883,10 +843,6 @@ function GoalCard({
       className={`group rounded-3xl border bg-white/[0.04] p-5 backdrop-blur-xl transition ${theme.border}`}
     >
 
-      {/* =====================================================
-          TOP
-      ====================================================== */}
-
       <div className="mb-5 flex items-start justify-between gap-4">
 
         <div className="flex min-w-0 items-start gap-3">
@@ -904,8 +860,7 @@ function GoalCard({
             </h3>
 
             <p className="mt-1 text-xs text-white/30">
-              {goal.category ||
-                "Other"}
+              {goal.category || "Other"}
             </p>
 
           </div>
@@ -919,7 +874,6 @@ function GoalCard({
             onClick={onEdit}
             className="rounded-xl p-2 text-white/40 transition hover:bg-blue-500/10 hover:text-blue-400"
             title="Edit"
-            aria-label="Edit goal"
           >
             <Pencil size={16} />
           </button>
@@ -929,7 +883,6 @@ function GoalCard({
             onClick={onDelete}
             className="rounded-xl p-2 text-white/40 transition hover:bg-red-500/10 hover:text-red-400"
             title="Delete"
-            aria-label="Delete goal"
           >
             <Trash2 size={16} />
           </button>
@@ -938,19 +891,11 @@ function GoalCard({
 
       </div>
 
-      {/* =====================================================
-          DESCRIPTION
-      ====================================================== */}
-
       {goal.description && (
         <p className="mb-5 line-clamp-2 text-sm leading-6 text-white/40">
           {goal.description}
         </p>
       )}
-
-      {/* =====================================================
-          AMOUNT
-      ====================================================== */}
 
       <div className="mb-3 flex items-end justify-between gap-4">
 
@@ -982,20 +927,13 @@ function GoalCard({
 
       </div>
 
-      {/* =====================================================
-          PROGRESS BAR
-      ====================================================== */}
-
       <div className="mb-2 h-2 overflow-hidden rounded-full bg-white/10">
 
         <div
           className={`h-full rounded-full transition-all duration-500 ${theme.progress}`}
           style={{
             width: `${Math.min(
-              Math.max(
-                progress,
-                0
-              ),
+              Math.max(progress, 0),
               100
             )}%`,
           }}
@@ -1005,33 +943,36 @@ function GoalCard({
 
       <div className="mb-5 flex items-center justify-between text-xs">
 
-        <span
-          className={
-            theme.amount
-          }
-        >
+        <span className={theme.amount}>
           {progress}%
         </span>
 
         <span className="text-right text-white/30">
-          {money(remaining)}{" "}
-          remaining
+          {money(remaining)} remaining
         </span>
 
       </div>
 
-      {/* =====================================================
-          STATUS
-      ====================================================== */}
-
       <div className="flex items-center justify-between gap-3 border-t border-white/10 pt-4">
 
-        <StatusBadge
-          progress={progress}
-          deadlineInfo={
-            deadlineInfo
-          }
-        />
+        <div className="flex items-center gap-2">
+
+          <StatusBadge
+            progress={progress}
+            deadlineInfo={deadlineInfo}
+          />
+
+          {goal.reminderEnabled &&
+            !completed && (
+              <div
+                className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400"
+                title={`Reminder ${goal.reminderTime || ""}`}
+              >
+                <Bell size={14} />
+              </div>
+            )}
+
+        </div>
 
         {goal.deadline && (
           <div className="min-w-0 text-right">
@@ -1047,9 +988,7 @@ function GoalCard({
                   : "text-white/50"
               }`}
             >
-              {formatDate(
-                goal.deadline
-              )}
+              {formatDate(goal.deadline)}
             </p>
 
           </div>
@@ -1062,7 +1001,7 @@ function GoalCard({
 }
 
 // ===========================================================
-// STATUS BADGE
+// STATUS
 // ===========================================================
 
 function StatusBadge({
@@ -1072,9 +1011,7 @@ function StatusBadge({
   if (progress >= 100) {
     return (
       <div className="flex items-center gap-2 rounded-xl bg-green-500/10 px-3 py-2 text-xs text-green-400">
-        <CheckCircle2
-          size={14}
-        />
+        <CheckCircle2 size={14} />
         Completed
       </div>
     );
@@ -1086,9 +1023,7 @@ function StatusBadge({
   ) {
     return (
       <div className="flex items-center gap-2 rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-400">
-        <AlertCircle
-          size={14}
-        />
+        <AlertCircle size={14} />
         Overdue
       </div>
     );
@@ -1103,7 +1038,7 @@ function StatusBadge({
 }
 
 // ===========================================================
-// GOAL MODAL
+// MODAL
 // ===========================================================
 
 function GoalModal({
@@ -1115,9 +1050,6 @@ function GoalModal({
   onSubmit,
   onClose,
 }) {
-  const categories =
-    CATEGORIES;
-
   return (
     <div
       className="fixed inset-0 z-[60] flex items-end justify-center bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-4"
@@ -1132,10 +1064,6 @@ function GoalModal({
     >
 
       <div className="flex max-h-[calc(100dvh-20px)] w-full flex-col overflow-hidden rounded-t-3xl border border-white/10 bg-[#111] shadow-2xl sm:max-h-[90vh] sm:max-w-lg sm:rounded-3xl">
-
-        {/* =================================================
-            HEADER
-        ================================================== */}
 
         <div className="flex shrink-0 items-center justify-between border-b border-white/[0.06] p-5 sm:p-6">
 
@@ -1160,16 +1088,11 @@ function GoalModal({
             onClick={onClose}
             disabled={saving}
             className="shrink-0 rounded-xl bg-white/10 p-2 text-white/60 transition hover:bg-white/20 hover:text-white disabled:opacity-40"
-            aria-label="Close"
           >
             <X size={20} />
           </button>
 
         </div>
-
-        {/* =================================================
-            SCROLL AREA
-        ================================================== */}
 
         <div className="overflow-y-auto p-5 sm:p-6">
 
@@ -1178,21 +1101,15 @@ function GoalModal({
             className="space-y-4"
           >
 
-            {/* GOAL NAME */}
-
             <Input
               label="Goal Name"
               name="title"
               value={form.title}
-              onChange={
-                onChange
-              }
+              onChange={onChange}
               placeholder="e.g. New Camera"
               required
               autoFocus
             />
-
-            {/* DESCRIPTION */}
 
             <div>
 
@@ -1202,20 +1119,14 @@ function GoalModal({
 
               <textarea
                 name="description"
-                value={
-                  form.description
-                }
-                onChange={
-                  onChange
-                }
+                value={form.description}
+                onChange={onChange}
                 placeholder="What is this goal for?"
                 rows={3}
                 className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/20 transition focus:border-blue-400/40"
               />
 
             </div>
-
-            {/* AMOUNTS */}
 
             <div className="grid gap-4 sm:grid-cols-2">
 
@@ -1225,12 +1136,8 @@ function GoalModal({
                 type="number"
                 min="0"
                 step="0.01"
-                value={
-                  form.targetAmount
-                }
-                onChange={
-                  onChange
-                }
+                value={form.targetAmount}
+                onChange={onChange}
                 placeholder="100000"
                 required
                 inputMode="decimal"
@@ -1242,19 +1149,13 @@ function GoalModal({
                 type="number"
                 min="0"
                 step="0.01"
-                value={
-                  form.currentAmount
-                }
-                onChange={
-                  onChange
-                }
+                value={form.currentAmount}
+                onChange={onChange}
                 placeholder="0"
                 inputMode="decimal"
               />
 
             </div>
-
-            {/* CATEGORY */}
 
             <div>
 
@@ -1266,30 +1167,20 @@ function GoalModal({
 
                 <select
                   name="category"
-                  value={
-                    form.category
-                  }
-                  onChange={
-                    onChange
-                  }
+                  value={form.category}
+                  onChange={onChange}
                   className="w-full appearance-none rounded-2xl border border-white/10 bg-[#171717] px-4 py-3 pr-10 text-sm text-white outline-none transition focus:border-blue-400/40"
                 >
-
-                  {categories.map(
+                  {CATEGORIES.map(
                     (category) => (
                       <option
-                        key={
-                          category
-                        }
-                        value={
-                          category
-                        }
+                        key={category}
+                        value={category}
                       >
                         {category}
                       </option>
                     )
                   )}
-
                 </select>
 
                 <ChevronDown
@@ -1301,8 +1192,6 @@ function GoalModal({
 
             </div>
 
-            {/* DEADLINE */}
-
             <div>
 
               <label className="mb-2 block text-xs text-white/50">
@@ -1312,18 +1201,80 @@ function GoalModal({
               <input
                 type="date"
                 name="deadline"
-                value={
-                  form.deadline
-                }
-                onChange={
-                  onChange
-                }
+                value={form.deadline}
+                onChange={onChange}
                 className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition focus:border-blue-400/40"
               />
 
             </div>
 
-            {/* BUTTONS */}
+            {/* =================================================
+                REMINDER
+            ================================================== */}
+
+            <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+
+              <div className="flex items-center justify-between gap-4">
+
+                <div className="flex items-center gap-3">
+
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
+                    {form.reminderEnabled ? (
+                      <Bell size={18} />
+                    ) : (
+                      <BellOff size={18} />
+                    )}
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-medium">
+                      Goal Reminder
+                    </p>
+
+                    <p className="mt-1 text-xs text-white/30">
+                      Remind me about this goal deadline
+                    </p>
+                  </div>
+
+                </div>
+
+                <label className="relative inline-flex cursor-pointer items-center">
+
+                  <input
+                    type="checkbox"
+                    name="reminderEnabled"
+                    checked={form.reminderEnabled}
+                    onChange={onChange}
+                    className="peer sr-only"
+                  />
+
+                  <div className="h-6 w-11 rounded-full bg-white/10 transition peer-checked:bg-blue-500" />
+
+                  <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-white transition peer-checked:translate-x-5" />
+
+                </label>
+
+              </div>
+
+              {form.reminderEnabled && (
+                <div className="mt-4">
+
+                  <label className="mb-2 block text-xs text-white/50">
+                    Reminder Time
+                  </label>
+
+                  <input
+                    type="time"
+                    name="reminderTime"
+                    value={form.reminderTime}
+                    onChange={onChange}
+                    className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none focus:border-blue-400/40"
+                  />
+
+                </div>
+              )}
+
+            </div>
 
             <div className="flex gap-3 pt-3">
 
@@ -1453,7 +1404,7 @@ function StatCard({
 }
 
 // ===========================================================
-// EMPTY GOALS
+// EMPTY
 // ===========================================================
 
 function EmptyGoals({
@@ -1498,13 +1449,11 @@ function EmptyGoals({
 // ===========================================================
 
 function getProgress(goal) {
-  const target = Number(
-    goal.targetAmount || 0
-  );
+  const target =
+    Number(goal.targetAmount || 0);
 
-  const current = Number(
-    goal.currentAmount || 0
-  );
+  const current =
+    Number(goal.currentAmount || 0);
 
   if (
     !Number.isFinite(target) ||
@@ -1525,13 +1474,7 @@ function getProgress(goal) {
   );
 }
 
-// ===========================================================
-// FIREBASE TIMESTAMP HELPER
-// ===========================================================
-
-function getTimestampValue(
-  timestamp
-) {
+function getTimestampValue(timestamp) {
   if (!timestamp) {
     return 0;
   }
@@ -1543,15 +1486,11 @@ function getTimestampValue(
     return timestamp.toMillis();
   }
 
-  if (
-    timestamp instanceof Date
-  ) {
+  if (timestamp instanceof Date) {
     return timestamp.getTime();
   }
 
-  if (
-    typeof timestamp === "number"
-  ) {
+  if (typeof timestamp === "number") {
     return timestamp;
   }
 
@@ -1562,18 +1501,14 @@ function getTimestampValue(
     return (
       timestamp.seconds * 1000 +
       Math.floor(
-        (timestamp.nanoseconds ||
-          0) / 1000000
+        (timestamp.nanoseconds || 0) /
+          1000000
       )
     );
   }
 
   return 0;
 }
-
-// ===========================================================
-// DATE FORMAT
-// ===========================================================
 
 function formatDate(date) {
   if (!date) {
@@ -1585,9 +1520,7 @@ function formatDate(date) {
   );
 
   if (
-    Number.isNaN(
-      value.getTime()
-    )
+    Number.isNaN(value.getTime())
   ) {
     return date;
   }
@@ -1602,13 +1535,7 @@ function formatDate(date) {
   );
 }
 
-// ===========================================================
-// DEADLINE
-// ===========================================================
-
-function getDeadlineInfo(
-  deadline
-) {
+function getDeadlineInfo(deadline) {
   if (!deadline) {
     return null;
   }

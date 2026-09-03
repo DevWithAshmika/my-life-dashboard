@@ -1,10 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
 import {
   Bell,
   CheckSquare,
   CalendarDays,
   AlertCircle,
   Wallet,
+  Target,
+  Repeat,
   X,
   Check,
 } from "lucide-react";
@@ -13,37 +16,72 @@ export default function NotificationBell({
   notifications = [],
 }) {
   const [open, setOpen] = useState(false);
-  const [readIds, setReadIds] = useState([]);
 
-  const unreadCount = useMemo(() => {
-    return notifications.filter(
-      (item) => !readIds.includes(item.id)
-    ).length;
-  }, [notifications, readIds]);
+  const [readIds, setReadIds] =
+    useState(() => {
+      try {
+        return JSON.parse(
+          localStorage.getItem(
+            "my-dashboard-read-notifications"
+          ) || "[]"
+        );
+      } catch {
+        return [];
+      }
+    });
+
+  useEffect(() => {
+    localStorage.setItem(
+      "my-dashboard-read-notifications",
+      JSON.stringify(readIds)
+    );
+  }, [readIds]);
+
+  const unreadCount =
+    useMemo(() => {
+      return notifications.filter(
+        (item) =>
+          !readIds.includes(
+            item.id
+          )
+      ).length;
+    }, [
+      notifications,
+      readIds,
+    ]);
 
   function markAsRead(id) {
     setReadIds((previous) => {
-      if (previous.includes(id)) {
+      if (
+        previous.includes(id)
+      ) {
         return previous;
       }
 
-      return [...previous, id];
+      return [
+        ...previous,
+        id,
+      ];
     });
   }
 
   function markAllAsRead() {
     setReadIds(
-      notifications.map((item) => item.id)
+      notifications.map(
+        (item) => item.id
+      )
     );
   }
 
   return (
     <div className="relative">
 
-      {/* Bell Button */}
-
       <button
-        onClick={() => setOpen((value) => !value)}
+        onClick={() =>
+          setOpen(
+            (value) => !value
+          )
+        }
         className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.05] text-white/70 backdrop-blur-xl transition hover:bg-white/10"
         aria-label="Notifications"
       >
@@ -58,20 +96,16 @@ export default function NotificationBell({
         )}
       </button>
 
-      {/* Notification Panel */}
-
       {open && (
         <>
-          {/* Mobile backdrop */}
-
           <div
             className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm sm:hidden"
-            onClick={() => setOpen(false)}
+            onClick={() =>
+              setOpen(false)
+            }
           />
 
           <div className="fixed left-4 right-4 top-20 z-50 overflow-hidden rounded-3xl border border-white/10 bg-[#111]/95 shadow-2xl backdrop-blur-2xl sm:absolute sm:left-auto sm:right-0 sm:top-14 sm:w-[380px]">
-
-            {/* Header */}
 
             <div className="flex items-center justify-between border-b border-white/10 p-4">
 
@@ -87,9 +121,12 @@ export default function NotificationBell({
 
               <div className="flex items-center gap-2">
 
-                {notifications.length > 0 && (
+                {notifications.length >
+                  0 && (
                   <button
-                    onClick={markAllAsRead}
+                    onClick={
+                      markAllAsRead
+                    }
                     className="rounded-xl px-3 py-2 text-xs text-white/40 transition hover:bg-white/10 hover:text-white"
                   >
                     Mark all read
@@ -97,7 +134,9 @@ export default function NotificationBell({
                 )}
 
                 <button
-                  onClick={() => setOpen(false)}
+                  onClick={() =>
+                    setOpen(false)
+                  }
                   className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-white/40 hover:bg-white/10 hover:text-white"
                 >
                   <X size={17} />
@@ -107,11 +146,10 @@ export default function NotificationBell({
 
             </div>
 
-            {/* List */}
-
             <div className="max-h-[430px] overflow-y-auto">
 
-              {notifications.length === 0 ? (
+              {notifications.length ===
+              0 ? (
 
                 <div className="px-6 py-12 text-center">
 
@@ -143,11 +181,15 @@ export default function NotificationBell({
 
                       return (
                         <NotificationItem
-                          key={notification.id}
+                          key={
+                            notification.id
+                          }
                           notification={
                             notification
                           }
-                          isRead={isRead}
+                          isRead={
+                            isRead
+                          }
                           onRead={() =>
                             markAsRead(
                               notification.id
@@ -172,7 +214,7 @@ export default function NotificationBell({
 }
 
 // ===========================================================
-// NOTIFICATION ITEM
+// ITEM
 // ===========================================================
 
 function NotificationItem({
@@ -181,7 +223,51 @@ function NotificationItem({
   onRead,
 }) {
   const Icon =
-    notification.icon || Bell;
+    notification.icon ||
+    Bell;
+
+  let iconStyle =
+    "bg-white/10 text-white/60";
+
+  if (
+    notification.type ===
+    "expense"
+  ) {
+    iconStyle =
+      "bg-red-500/10 text-red-400";
+  }
+
+  if (
+    notification.type ===
+    "income"
+  ) {
+    iconStyle =
+      "bg-emerald-500/10 text-emerald-400";
+  }
+
+  if (
+    notification.type ===
+    "overdue"
+  ) {
+    iconStyle =
+      "bg-red-500/10 text-red-400";
+  }
+
+  if (
+    notification.type ===
+    "goal"
+  ) {
+    iconStyle =
+      "bg-blue-500/10 text-blue-400";
+  }
+
+  if (
+    notification.type ===
+    "habit"
+  ) {
+    iconStyle =
+      "bg-purple-500/10 text-purple-400";
+  }
 
   return (
     <button
@@ -194,15 +280,7 @@ function NotificationItem({
     >
 
       <div
-        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-          notification.type === "expense"
-            ? "bg-red-500/10 text-red-400"
-            : notification.type === "income"
-            ? "bg-emerald-500/10 text-emerald-400"
-            : notification.type === "overdue"
-            ? "bg-red-500/10 text-red-400"
-            : "bg-white/10 text-white/60"
-        }`}
+        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconStyle}`}
       >
         <Icon size={17} />
       </div>

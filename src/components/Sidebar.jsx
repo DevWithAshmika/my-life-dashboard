@@ -82,18 +82,12 @@ export default function Sidebar({
   mobileOpen = false,
   setMobileOpen,
 }) {
-  // =========================================================
-  // LOGOUT
-  // =========================================================
-
   async function handleLogout() {
     const confirmed = window.confirm(
       "Are you sure you want to logout?"
     );
 
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     try {
       await signOut(auth);
@@ -102,20 +96,13 @@ export default function Sidebar({
         setMobileOpen(false);
       }
     } catch (error) {
-      console.error(
-        "Logout error:",
-        error
-      );
+      console.error("Logout error:", error);
 
-      alert(
+      window.alert(
         "Unable to logout. Please try again."
       );
     }
   }
-
-  // =========================================================
-  // NAVIGATION
-  // =========================================================
 
   function handleNavigation(id) {
     setActivePage(id);
@@ -136,7 +123,7 @@ export default function Sidebar({
           DESKTOP SIDEBAR
       ====================================================== */}
 
-      <aside className="fixed left-0 top-0 z-40 hidden h-screen w-64 border-r border-white/10 bg-black/75 p-4 backdrop-blur-2xl lg:block">
+      <aside className="fixed left-0 top-0 z-40 hidden h-screen w-64 border-r border-white/10 bg-black/95 p-4 lg:block">
         <SidebarContent
           activePage={activePage}
           handleNavigation={handleNavigation}
@@ -150,51 +137,89 @@ export default function Sidebar({
       ====================================================== */}
 
       {mobileOpen && (
-        <div className="fixed inset-0 z-[100] lg:hidden">
-          
-          {/* OVERLAY */}
+        <div
+          className="fixed inset-0 z-[9999] lg:hidden"
+          style={{
+            position: "fixed",
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+          }}
+        >
+          {/* =================================================
+              DARK OVERLAY
+          ================================================== */}
 
-          <button
-            type="button"
-            aria-label="Close menu"
-            onClick={() =>
-              setMobileOpen(false)
-            }
-            className="absolute inset-0 h-full w-full bg-black/75 backdrop-blur-sm"
+          <div
+            onClick={() => setMobileOpen(false)}
+            className="absolute inset-0 bg-black/70"
+            style={{
+              position: "absolute",
+              top: 0,
+              right: 0,
+              bottom: 0,
+              left: 0,
+            }}
           />
 
-          {/* DRAWER */}
+          {/* =================================================
+              DRAWER
+          ================================================== */}
 
-          <aside className="relative z-10 flex h-full w-[290px] max-w-[85vw] flex-col border-r border-white/10 bg-black/95 p-4 shadow-2xl backdrop-blur-2xl">
-            
-            {/* CLOSE */}
+          <aside
+            className="absolute left-0 top-0 flex h-full w-[290px] max-w-[85vw] flex-col border-r border-white/10 bg-black p-4 shadow-2xl"
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: "290px",
+              maxWidth: "85vw",
+              height: "100%",
+              zIndex: 10000,
+              backgroundColor: "#000000",
+              boxSizing: "border-box",
+              WebkitTransform: "translateZ(0)",
+              transform: "translateZ(0)",
+              WebkitBackfaceVisibility: "hidden",
+              backfaceVisibility: "hidden",
+              overflow: "hidden",
+            }}
+          >
+            {/* =================================================
+                MOBILE HEADER
+            ================================================== */}
 
-            <div className="mb-4 flex items-center justify-between">
-              
+            <div className="mb-4 flex shrink-0 items-center justify-between">
               <div className="px-2">
-                <p className="text-xs text-white/30">
+                <p className="text-xs font-medium tracking-wider text-white/40">
                   MENU
                 </p>
               </div>
 
               <button
                 type="button"
-                onClick={() =>
-                  setMobileOpen(false)
-                }
+                onClick={() => setMobileOpen(false)}
                 aria-label="Close menu"
-                className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.06] text-white/50 transition hover:bg-white/10 hover:text-white active:scale-95"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/[0.08] text-white active:bg-white/[0.15]"
               >
                 <X size={19} />
               </button>
             </div>
 
-            <SidebarContent
-              activePage={activePage}
-              handleNavigation={handleNavigation}
-              user={user}
-              handleLogout={handleLogout}
-            />
+            {/* =================================================
+                CONTENT
+            ================================================== */}
+
+            <div className="min-h-0 flex-1">
+              <SidebarContent
+                activePage={activePage}
+                handleNavigation={handleNavigation}
+                user={user}
+                handleLogout={handleLogout}
+              />
+            </div>
           </aside>
         </div>
       )}
@@ -213,15 +238,13 @@ function SidebarContent({
   handleLogout,
 }) {
   return (
-    <div className="flex h-full flex-col">
-      
+    <div className="flex h-full min-h-0 flex-col">
       {/* =====================================================
           BRAND
       ====================================================== */}
 
-      <div className="mb-7 flex items-center gap-3 px-2">
-        
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/10">
+      <div className="mb-7 flex shrink-0 items-center gap-3 px-2">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-white">
           <LayoutDashboard size={20} />
         </div>
 
@@ -240,8 +263,7 @@ function SidebarContent({
           NAVIGATION
       ====================================================== */}
 
-      <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
-        
+      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
         {navigation.map((item) => {
           const Icon = item.icon;
 
@@ -255,22 +277,24 @@ function SidebarContent({
               onClick={() =>
                 handleNavigation(item.id)
               }
-              className={`group flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm transition-all duration-200 ${
+              className={`group flex min-h-[48px] w-full shrink-0 items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm transition-colors duration-150 ${
                 active
                   ? "bg-white text-black shadow-lg"
-                  : "text-white/45 hover:bg-white/[0.06] hover:text-white"
+                  : "text-white/50 active:bg-white/[0.10]"
               }`}
             >
               <Icon
                 size={18}
                 className={
                   active
-                    ? "text-black"
-                    : "text-white/40 group-hover:text-white"
+                    ? "shrink-0 text-black"
+                    : "shrink-0 text-white/50"
                 }
               />
 
-              <span>{item.label}</span>
+              <span className="truncate">
+                {item.label}
+              </span>
             </button>
           );
         })}
@@ -280,10 +304,8 @@ function SidebarContent({
           USER
       ====================================================== */}
 
-      <div className="mt-4 border-t border-white/10 pt-4">
-        
-        <div className="mb-3 flex items-center gap-3 rounded-2xl bg-white/[0.04] p-3">
-          
+      <div className="mt-4 shrink-0 border-t border-white/10 pt-4">
+        <div className="mb-3 flex items-center gap-3 rounded-2xl bg-white/[0.05] p-3">
           {user?.photoURL ? (
             <img
               src={user.photoURL}
@@ -300,25 +322,25 @@ function SidebarContent({
             </div>
           )}
 
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-white">
-              {user?.displayName ||
-                "User"}
+              {user?.displayName || "User"}
             </p>
 
             <p className="truncate text-xs text-white/30">
-              {user?.email ||
-                "Signed in"}
+              {user?.email || "Signed in"}
             </p>
           </div>
         </div>
 
-        {/* LOGOUT */}
+        {/* =================================================
+            LOGOUT
+        ================================================== */}
 
         <button
           type="button"
           onClick={handleLogout}
-          className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm text-red-400 transition hover:bg-red-500/10 active:scale-[0.99]"
+          className="flex min-h-[48px] w-full items-center gap-3 rounded-2xl px-3 py-3 text-sm text-red-400 active:bg-red-500/10"
         >
           <LogOut size={18} />
 

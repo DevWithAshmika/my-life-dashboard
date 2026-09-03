@@ -12,19 +12,16 @@ import {
   TrendingDown,
   Clock,
   FileText,
-  Settings2,
-  DollarSign,
-  ChevronDown,
-  RefreshCw,
-  Check,
   ArrowUpRight,
+  ChevronRight,
+  CircleCheck,
+  Sparkles,
 } from "lucide-react";
 
 import {
   collection,
   doc,
   onSnapshot,
-  setDoc,
 } from "firebase/firestore";
 
 import {
@@ -40,48 +37,11 @@ import {
 import { db } from "../firebase/config";
 import Loading from "../components/Loading";
 
-// ===========================================================
-// CURRENCIES
-// ===========================================================
-
-const CURRENCIES = {
-  LKR: {
-    code: "LKR",
-    symbol: "Rs.",
-    name: "Sri Lankan Rupee",
-  },
-
-  USD: {
-    code: "USD",
-    symbol: "$",
-    name: "US Dollar",
-  },
-
-  EUR: {
-    code: "EUR",
-    symbol: "€",
-    name: "Euro",
-  },
-
-  GBP: {
-    code: "GBP",
-    symbol: "£",
-    name: "British Pound",
-  },
-};
-
-// ===========================================================
-// MAIN DASHBOARD
-// ===========================================================
-
 export default function Dashboard({
   user,
   setActivePage,
+  darkMode = true,
 }) {
-  // =========================================================
-  // DATA
-  // =========================================================
-
   const [data, setData] = useState({
     finance: [],
     tasks: [],
@@ -93,14 +53,7 @@ export default function Dashboard({
     notes: [],
   });
 
-  // =========================================================
-  // SETTINGS
-  // =========================================================
-
   const [preferences, setPreferences] = useState({
-    currency: "LKR",
-    exchangeCurrency: "USD",
-
     showFinance: true,
     showTasks: true,
     showGoals: true,
@@ -111,68 +64,26 @@ export default function Dashboard({
 
   const [loading, setLoading] = useState(true);
 
-  // =========================================================
-  // EXCHANGE RATE
-  // =========================================================
+  /*
+  |--------------------------------------------------------------------------
+  | Navigation
+  |--------------------------------------------------------------------------
+  */
 
-  const [exchangeRate, setExchangeRate] = useState(null);
-  const [exchangeLoading, setExchangeLoading] = useState(false);
-  const [exchangeError, setExchangeError] = useState(false);
-  const [exchangeOpen, setExchangeOpen] = useState(false);
-
-  // =========================================================
-  // CURRENCY INFO
-  // =========================================================
-
-  const currencyInfo = useMemo(() => {
-    return (
-      CURRENCIES[preferences.currency] ||
-      CURRENCIES.LKR
-    );
-  }, [preferences.currency]);
-
-  const exchangeCurrencyInfo = useMemo(() => {
-    return (
-      CURRENCIES[preferences.exchangeCurrency] ||
-      CURRENCIES.USD
-    );
-  }, [preferences.exchangeCurrency]);
-
-  // =========================================================
-  // PAGE NAVIGATION
-  // =========================================================
-
-  function goToPage(page) {
+  const goToPage = (page) => {
     if (typeof setActivePage === "function") {
       setActivePage(page);
     }
-  }
+  };
 
-  // =========================================================
-  // FORMAT MONEY
-  // =========================================================
-
-  function formatMoney(amount) {
-    const number = Number(amount || 0);
-
-    return `${currencyInfo.symbol} ${number.toLocaleString(
-      undefined,
-      {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 2,
-      }
-    )}`;
-  }
-
-  // =========================================================
-  // FIREBASE DATA
-  // =========================================================
+  /*
+  |--------------------------------------------------------------------------
+  | Firestore Live Data
+  |--------------------------------------------------------------------------
+  */
 
   useEffect(() => {
-    if (!user?.uid) {
-      setLoading(false);
-      return;
-    }
+    if (!user?.uid) return;
 
     const collectionNames = [
       "finance",
@@ -187,7 +98,7 @@ export default function Dashboard({
 
     const unsubscribers = collectionNames.map(
       (collectionName) => {
-        const reference = collection(
+        const ref = collection(
           db,
           "users",
           user.uid,
@@ -195,7 +106,7 @@ export default function Dashboard({
         );
 
         return onSnapshot(
-          reference,
+          ref,
           (snapshot) => {
             const items = snapshot.docs.map(
               (item) => ({
@@ -213,7 +124,7 @@ export default function Dashboard({
           },
           (error) => {
             console.error(
-              `${collectionName} error:`,
+              `Error loading ${collectionName}:`,
               error
             );
 
@@ -224,22 +135,24 @@ export default function Dashboard({
     );
 
     return () => {
-      unsubscribers.forEach(
-        (unsubscribe) => unsubscribe()
-      );
+      unsubscribers.forEach((unsubscribe) => {
+        if (typeof unsubscribe === "function") {
+          unsubscribe();
+        }
+      });
     };
   }, [user?.uid]);
 
-  // =========================================================
-  // LIVE SETTINGS
-  // =========================================================
+  /*
+  |--------------------------------------------------------------------------
+  | Dashboard Preferences
+  |--------------------------------------------------------------------------
+  */
 
   useEffect(() => {
-    if (!user?.uid) {
-      return;
-    }
+    if (!user?.uid) return;
 
-    const reference = doc(
+    const ref = doc(
       db,
       "users",
       user.uid,
@@ -248,25 +161,13 @@ export default function Dashboard({
     );
 
     const unsubscribe = onSnapshot(
-      reference,
+      ref,
       (snapshot) => {
-        if (!snapshot.exists()) {
-          return;
-        }
+        if (!snapshot.exists()) return;
 
         const settings = snapshot.data();
 
         setPreferences({
-          currency:
-            typeof settings.currency === "string"
-              ? settings.currency
-              : "LKR",
-
-          exchangeCurrency:
-            typeof settings.exchangeCurrency === "string"
-              ? settings.exchangeCurrency
-              : "USD",
-
           showFinance:
             settings.showFinance !== false,
 
@@ -288,7 +189,7 @@ export default function Dashboard({
       },
       (error) => {
         console.error(
-          "Dashboard settings error:",
+          "Preferences error:",
           error
         );
       }
@@ -297,1996 +198,1713 @@ export default function Dashboard({
     return () => unsubscribe();
   }, [user?.uid]);
 
-  // =========================================================
-  // EXCHANGE RATE
-  // =========================================================
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadExchangeRate() {
-      const base =
-        preferences.exchangeCurrency;
-
-      const quote =
-        preferences.currency;
-
-      setExchangeError(false);
-
-      if (base === quote) {
-        setExchangeRate(1);
-        setExchangeLoading(false);
-        return;
-      }
-
-      setExchangeLoading(true);
-
-      try {
-        const response = await fetch(
-          `https://api.frankfurter.dev/v2/rate/${base}/${quote}`
-        );
-
-        if (!response.ok) {
-          throw new Error(
-            "Exchange rate request failed"
-          );
-        }
-
-        const result =
-          await response.json();
-
-        if (!cancelled) {
-          setExchangeRate(
-            Number(result.rate || 0)
-          );
-
-          setExchangeError(false);
-        }
-      } catch (error) {
-        console.error(
-          "Exchange rate error:",
-          error
-        );
-
-        if (!cancelled) {
-          setExchangeRate(null);
-          setExchangeError(true);
-        }
-      } finally {
-        if (!cancelled) {
-          setExchangeLoading(false);
-        }
-      }
-    }
-
-    loadExchangeRate();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    preferences.currency,
-    preferences.exchangeCurrency,
-  ]);
-
-  // =========================================================
-  // CHANGE EXCHANGE CURRENCY
-  // =========================================================
-
-  const changeExchangeCurrency =
-    async (currency) => {
-      if (!user?.uid) {
-        return;
-      }
-
-      setExchangeOpen(false);
-
-      setPreferences((previous) => ({
-        ...previous,
-        exchangeCurrency: currency,
-      }));
-
-      try {
-        const settingsRef = doc(
-          db,
-          "users",
-          user.uid,
-          "settings",
-          "preferences"
-        );
-
-        await setDoc(
-          settingsRef,
-          {
-            exchangeCurrency: currency,
-          },
-          {
-            merge: true,
-          }
-        );
-      } catch (error) {
-        console.error(
-          "Exchange currency save error:",
-          error
-        );
-      }
-    };
-
-  // =========================================================
-  // DATE
-  // =========================================================
+  /*
+  |--------------------------------------------------------------------------
+  | Dates
+  |--------------------------------------------------------------------------
+  */
 
   const today = new Date();
 
-  const todayString =
-    formatDate(today);
+  const startOfToday = new Date(today);
+  startOfToday.setHours(0, 0, 0, 0);
 
-  const currentMonth = `${today.getFullYear()}-${String(
-    today.getMonth() + 1
-  ).padStart(2, "0")}`;
+  const endOfToday = new Date(today);
+  endOfToday.setHours(23, 59, 59, 999);
 
-  // =========================================================
-  // FINANCE
-  // CURRENT MONTH
-  // =========================================================
+  const startOfMonth = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    1
+  );
+
+  const startOfNextMonth = new Date(
+    today.getFullYear(),
+    today.getMonth() + 1,
+    1
+  );
+
+  const sevenDaysAgo = new Date(today);
+  sevenDaysAgo.setDate(today.getDate() - 6);
+  sevenDaysAgo.setHours(0, 0, 0, 0);
+
+  /*
+  |--------------------------------------------------------------------------
+  | Money
+  |--------------------------------------------------------------------------
+  */
+
+  const formatMoney = (value) => {
+    return `Rs. ${Number(value || 0).toLocaleString(
+      "en-LK",
+      {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }
+    )}`;
+  };
+
+  /*
+  |--------------------------------------------------------------------------
+  | Finance
+  |--------------------------------------------------------------------------
+  */
 
   const financeStats = useMemo(() => {
-    let income = 0;
-    let expense = 0;
+    const finance = data.finance || [];
 
-    data.finance.forEach((item) => {
-      if (
-        !String(item.date || "").startsWith(
-          currentMonth
-        )
-      ) {
-        return;
-      }
+    const monthly = finance.filter((item) => {
+      const date = parseDate(item.date);
 
-      const amount = Number(
-        item.amount || 0
+      return (
+        date &&
+        date >= startOfMonth &&
+        date < startOfNextMonth
+      );
+    });
+
+    const income = monthly
+      .filter(
+        (item) =>
+          String(item.type || "").toLowerCase() ===
+          "income"
+      )
+      .reduce(
+        (sum, item) =>
+          sum + Number(item.amount || 0),
+        0
       );
 
-      if (item.type === "income") {
-        income += amount;
-      }
+    const expense = monthly
+      .filter(
+        (item) =>
+          String(item.type || "").toLowerCase() ===
+          "expense"
+      )
+      .reduce(
+        (sum, item) =>
+          sum + Number(item.amount || 0),
+        0
+      );
 
-      if (item.type === "expense") {
-        expense += amount;
-      }
-    });
+    const totalIncome = finance
+      .filter(
+        (item) =>
+          String(item.type || "").toLowerCase() ===
+          "income"
+      )
+      .reduce(
+        (sum, item) =>
+          sum + Number(item.amount || 0),
+        0
+      );
+
+    const totalExpense = finance
+      .filter(
+        (item) =>
+          String(item.type || "").toLowerCase() ===
+          "expense"
+      )
+      .reduce(
+        (sum, item) =>
+          sum + Number(item.amount || 0),
+        0
+      );
 
     return {
       income,
       expense,
       balance: income - expense,
+      totalIncome,
+      totalExpense,
+      totalBalance:
+        totalIncome - totalExpense,
     };
-  }, [
-    data.finance,
-    currentMonth,
-  ]);
+  }, [data.finance]);
 
-  // =========================================================
-  // TOTAL FINANCE BALANCE
-  // =========================================================
-
-  const totalFinanceBalance =
-    useMemo(() => {
-      let income = 0;
-      let expense = 0;
-
-      data.finance.forEach((item) => {
-        const amount = Number(
-          item.amount || 0
-        );
-
-        if (item.type === "income") {
-          income += amount;
-        }
-
-        if (item.type === "expense") {
-          expense += amount;
-        }
-      });
-
-      return {
-        income,
-        expense,
-        balance: income - expense,
-      };
-    }, [data.finance]);
-
-  // =========================================================
-  // 7 DAY FINANCE
-  // =========================================================
+  /*
+  |--------------------------------------------------------------------------
+  | 7 Day Finance
+  |--------------------------------------------------------------------------
+  */
 
   const last7Days = useMemo(() => {
-    const days = [];
+    const finance = data.finance || [];
 
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date();
+    return Array.from(
+      { length: 7 },
+      (_, index) => {
+        const date = new Date(sevenDaysAgo);
 
-      date.setDate(
-        date.getDate() - i
-      );
+        date.setDate(
+          sevenDaysAgo.getDate() + index
+        );
 
-      const dateString =
-        formatDate(date);
+        const nextDate = new Date(date);
 
-      const dayName =
-        date.toLocaleDateString(
-          "en-US",
-          {
-            weekday: "short",
+        nextDate.setDate(
+          date.getDate() + 1
+        );
+
+        const daily = finance.filter(
+          (item) => {
+            const itemDate = parseDate(
+              item.date
+            );
+
+            return (
+              itemDate &&
+              itemDate >= date &&
+              itemDate < nextDate
+            );
           }
         );
 
-      let income = 0;
-      let expense = 0;
+        const income = daily
+          .filter(
+            (item) =>
+              String(item.type || "").toLowerCase() ===
+              "income"
+          )
+          .reduce(
+            (sum, item) =>
+              sum + Number(item.amount || 0),
+            0
+          );
 
-      data.finance.forEach((item) => {
-        if (item.date !== dateString) {
-          return;
-        }
+        const expense = daily
+          .filter(
+            (item) =>
+              String(item.type || "").toLowerCase() ===
+              "expense"
+          )
+          .reduce(
+            (sum, item) =>
+              sum + Number(item.amount || 0),
+            0
+          );
 
-        const amount = Number(
-          item.amount || 0
-        );
-
-        if (item.type === "income") {
-          income += amount;
-        }
-
-        if (item.type === "expense") {
-          expense += amount;
-        }
-      });
-
-      days.push({
-        date: dateString,
-        day: dayName,
-        income,
-        expense,
-      });
-    }
-
-    return days;
+        return {
+          name: date.toLocaleDateString(
+            "en-US",
+            {
+              weekday: "short",
+            }
+          ),
+          income,
+          expense,
+        };
+      }
+    );
   }, [data.finance]);
 
-  // =========================================================
-  // MONTHLY EXPENSE
-  // =========================================================
+  /*
+  |--------------------------------------------------------------------------
+  | Expense Breakdown
+  |--------------------------------------------------------------------------
+  */
 
-  const monthlyAnalytics =
-    useMemo(() => {
-      const categoryTotals = {};
+  const expenseBreakdown = useMemo(() => {
+    const grouped = {};
 
-      data.finance.forEach((item) => {
-        if (item.type !== "expense") {
-          return;
-        }
+    (data.finance || [])
+      .filter((item) => {
+        const date = parseDate(item.date);
 
-        if (
-          !String(item.date || "").startsWith(
-            currentMonth
-          )
-        ) {
-          return;
-        }
-
-        const category =
-          item.category || "Other";
-
-        const amount = Number(
-          item.amount || 0
+        return (
+          date &&
+          date >= startOfMonth &&
+          date < startOfNextMonth &&
+          String(item.type || "").toLowerCase() ===
+            "expense"
         );
+      })
+      .forEach((item) => {
+        const category =
+          item.category ||
+          item.description ||
+          "Other";
 
-        categoryTotals[category] =
-          (categoryTotals[category] || 0) +
-          amount;
+        grouped[category] =
+          (grouped[category] || 0) +
+          Number(item.amount || 0);
       });
 
-      return Object.entries(
-        categoryTotals
-      )
-        .map(
-          ([category, amount]) => ({
-            category,
-            amount,
-          })
-        )
-        .sort(
-          (a, b) =>
-            b.amount - a.amount
-        );
-    }, [
-      data.finance,
-      currentMonth,
-    ]);
+    return Object.entries(grouped)
+      .map(([name, value]) => ({
+        name,
+        value,
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 6);
+  }, [data.finance]);
 
-  // =========================================================
-  // TASKS
-  // =========================================================
+  /*
+  |--------------------------------------------------------------------------
+  | Tasks
+  |--------------------------------------------------------------------------
+  */
 
   const taskStats = useMemo(() => {
-    const total =
-      data.tasks.length;
+    const tasks = data.tasks || [];
 
-    const completed =
-      data.tasks.filter(
-        (task) =>
+    const completed = tasks.filter(
+      (task) =>
+        task.completed === true ||
+        task.status === "completed" ||
+        task.status === "done"
+    ).length;
+
+    const todayTasks = tasks
+      .filter((task) => {
+        if (
           task.completed === true ||
           task.status === "completed" ||
           task.status === "done"
-      ).length;
+        ) {
+          return false;
+        }
 
-    const pending =
-      total - completed;
+        const date = parseDate(
+          task.dueDate ||
+            task.date ||
+            task.deadline
+        );
 
-    const percentage =
-      total > 0
-        ? Math.round(
-            (completed / total) * 100
-          )
-        : 0;
+        return (
+          date &&
+          date >= startOfToday &&
+          date <= endOfToday
+        );
+      })
+      .slice(0, 5);
 
     return {
-      total,
+      total: tasks.length,
       completed,
-      pending,
-      percentage,
+      pending: tasks.length - completed,
+      todayTasks,
     };
   }, [data.tasks]);
 
-  // =========================================================
-  // GOALS
-  // =========================================================
+  /*
+  |--------------------------------------------------------------------------
+  | Goals
+  |--------------------------------------------------------------------------
+  */
 
   const goalStats = useMemo(() => {
-    const total =
-      data.goals.length;
+    const goals = data.goals || [];
 
-    const completed =
-      data.goals.filter(
-        (goal) =>
-          goal.completed === true ||
-          goal.status === "completed"
-      ).length;
+    const completed = goals.filter(
+      (goal) =>
+        goal.completed === true ||
+        goal.status === "completed" ||
+        goal.status === "done"
+    );
 
-    const percentage =
-      total > 0
-        ? Math.round(
-            (completed / total) * 100
-          )
-        : 0;
+    const active = goals.filter(
+      (goal) =>
+        goal.completed !== true &&
+        goal.status !== "completed" &&
+        goal.status !== "done"
+    );
 
     return {
-      total,
-      completed,
-      percentage,
+      total: goals.length,
+      completed: completed.length,
+      active: active.length,
+      activeGoals: active.slice(0, 4),
     };
   }, [data.goals]);
 
-  // =========================================================
-  // HABITS
-  // =========================================================
+  /*
+  |--------------------------------------------------------------------------
+  | Habits
+  |--------------------------------------------------------------------------
+  */
 
   const habitStats = useMemo(() => {
-    const total =
-      data.habits.length;
+    const habits = data.habits || [];
 
-    const completedToday =
-      data.habits.filter(
-        (habit) =>
-          habit.completedToday === true ||
-          habit.todayCompleted === true
-      ).length;
-
-    const percentage =
-      total > 0
-        ? Math.round(
-            (completedToday / total) * 100
-          )
-        : 0;
+    const completedToday = habits.filter(
+      (habit) =>
+        habit.completedToday === true ||
+        habit.todayCompleted === true ||
+        habit.completed === true
+    ).length;
 
     return {
-      total,
+      total: habits.length,
       completedToday,
-      percentage,
+      remaining: Math.max(
+        habits.length - completedToday,
+        0
+      ),
+      percentage:
+        habits.length > 0
+          ? Math.round(
+              (completedToday /
+                habits.length) *
+                100
+            )
+          : 0,
     };
   }, [data.habits]);
 
-  // =========================================================
-  // FITNESS
-  // =========================================================
+  /*
+  |--------------------------------------------------------------------------
+  | Fitness
+  |--------------------------------------------------------------------------
+  */
 
-  const fitnessStats = useMemo(
-    () => ({
-      workouts:
-        data.fitness.length,
-    }),
-    [data.fitness]
-  );
+  const fitnessStats = useMemo(() => {
+    const fitness = data.fitness || [];
 
-  // =========================================================
-  // EVENTS
-  // =========================================================
+    const recent = fitness.filter((item) => {
+      const date = parseDate(
+        item.date ||
+          item.createdAt
+      );
 
-  const upcomingEvents =
-    useMemo(() => {
-      return [...data.calendar]
-        .filter((event) => {
-          if (!event.date) {
-            return false;
-          }
+      return (
+        date &&
+        date >= sevenDaysAgo &&
+        date <= endOfToday
+      );
+    });
 
-          return (
-            event.date >= todayString
-          );
-        })
-        .sort((a, b) =>
-          String(a.date).localeCompare(
-            String(b.date)
-          )
-        )
-        .slice(0, 5);
-    }, [
-      data.calendar,
-      todayString,
-    ]);
+    return {
+      total: fitness.length,
+      recent,
+    };
+  }, [data.fitness]);
 
-  // =========================================================
-  // TRAVEL
-  // =========================================================
+  /*
+  |--------------------------------------------------------------------------
+  | Upcoming Events
+  |--------------------------------------------------------------------------
+  */
 
-  const upcomingTrips =
-    useMemo(() => {
-      return [...data.travel]
-        .filter((trip) => {
-          if (!trip.date) {
-            return true;
-          }
+  const upcomingEvents = useMemo(() => {
+    return (data.calendar || [])
+      .filter((event) => {
+        const date = parseDate(
+          event.date ||
+            event.startDate ||
+            event.start
+        );
 
-          return (
-            trip.date >= todayString
-          );
-        })
-        .sort((a, b) =>
-          String(a.date).localeCompare(
-            String(b.date)
-          )
-        )
-        .slice(0, 3);
-    }, [
-      data.travel,
-      todayString,
-    ]);
+        return date && date >= startOfToday;
+      })
+      .sort((a, b) => {
+        const dateA = parseDate(
+          a.date ||
+            a.startDate ||
+            a.start
+        );
 
-  // =========================================================
-  // NOTES
-  // =========================================================
+        const dateB = parseDate(
+          b.date ||
+            b.startDate ||
+            b.start
+        );
 
-  const recentNotes =
-    useMemo(() => {
-      return [...data.notes]
-        .sort((a, b) => {
-          const aTime =
-            a.createdAt?.seconds || 0;
+        return (
+          (dateA?.getTime() || 0) -
+          (dateB?.getTime() || 0)
+        );
+      })
+      .slice(0, 5);
+  }, [data.calendar]);
 
-          const bTime =
-            b.createdAt?.seconds || 0;
+  /*
+  |--------------------------------------------------------------------------
+  | Upcoming Travel
+  |--------------------------------------------------------------------------
+  */
 
-          return bTime - aTime;
-        })
-        .slice(0, 3);
-    }, [data.notes]);
+  const upcomingTrips = useMemo(() => {
+    return (data.travel || [])
+      .filter((trip) => {
+        const date = parseDate(
+          trip.date ||
+            trip.startDate ||
+            trip.fromDate
+        );
 
-  // =========================================================
-  // GREETING
-  // =========================================================
+        return date && date >= startOfToday;
+      })
+      .sort((a, b) => {
+        const dateA = parseDate(
+          a.date ||
+            a.startDate ||
+            a.fromDate
+        );
 
-  const hour =
-    new Date().getHours();
+        const dateB = parseDate(
+          b.date ||
+            b.startDate ||
+            b.fromDate
+        );
 
-  let greeting =
-    "Good morning";
+        return (
+          (dateA?.getTime() || 0) -
+          (dateB?.getTime() || 0)
+        );
+      })
+      .slice(0, 5);
+  }, [data.travel]);
 
-  if (hour >= 12 && hour < 18) {
-    greeting =
-      "Good afternoon";
-  }
+  /*
+  |--------------------------------------------------------------------------
+  | Recent Notes
+  |--------------------------------------------------------------------------
+  */
 
-  if (hour >= 18 && hour < 22) {
-    greeting =
-      "Good evening";
-  }
+  const recentNotes = useMemo(() => {
+    return [...(data.notes || [])]
+      .sort((a, b) => {
+        const dateA = parseDate(
+          a.updatedAt ||
+            a.createdAt ||
+            a.date
+        );
 
-  if (hour >= 22 || hour < 5) {
-    greeting =
-      "Good night";
-  }
+        const dateB = parseDate(
+          b.updatedAt ||
+            b.createdAt ||
+            b.date
+        );
 
-  // =========================================================
-  // LOADING
-  // =========================================================
+        return (
+          (dateB?.getTime() || 0) -
+          (dateA?.getTime() || 0)
+        );
+      })
+      .slice(0, 4);
+  }, [data.notes]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | Greeting
+  |--------------------------------------------------------------------------
+  */
+
+  const greeting = useMemo(() => {
+    const hour = today.getHours();
+
+    if (hour < 12) return "Good Morning";
+    if (hour < 17) return "Good Afternoon";
+
+    return "Good Evening";
+  }, []);
+
+  /*
+  |--------------------------------------------------------------------------
+  | Loading
+  |--------------------------------------------------------------------------
+  */
 
   if (loading) {
-    return (
-      <Loading
-        text="Loading your dashboard..."
-      />
-    );
+    return <Loading />;
   }
 
-  // =========================================================
-  // UI
-  // =========================================================
+  /*
+  |--------------------------------------------------------------------------
+  | Dashboard UI
+  |--------------------------------------------------------------------------
+  */
 
   return (
-    <div className="min-h-screen text-white">
+    <div
+      className={`min-h-screen pb-10 ${
+        darkMode
+          ? "text-white"
+          : "text-slate-900"
+      }`}
+    >
 
-      {/* HEADER */}
+      {/* HERO */}
 
-      <div className="mb-8">
-        <p className="mb-1 text-sm text-white/40">
-          {greeting}
-        </p>
+      <section className="relative overflow-hidden rounded-[32px] border border-white/[0.08] bg-[#0b0d0c] p-5 shadow-2xl sm:p-7 lg:p-8">
 
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              {user?.displayName ||
-                "My Dashboard"}
-            </h1>
+        <div className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-emerald-500/[0.08] blur-3xl" />
 
-            <p className="mt-2 text-base text-white/40">
-              Here's your personal life overview.
-            </p>
-          </div>
+        <div className="pointer-events-none absolute -bottom-24 -left-20 h-56 w-56 rounded-full bg-blue-500/[0.05] blur-3xl" />
 
-          {user?.photoURL && (
-            <img
-              src={user.photoURL}
-              alt="Profile"
-              className="h-14 w-14 rounded-2xl object-cover ring-1 ring-white/10"
-            />
-          )}
-        </div>
-      </div>
+        <div className="relative z-10">
 
-      {/* =====================================================
-          TOP STATS
-      ====================================================== */}
+          <div className="flex flex-col gap-7 lg:flex-row lg:items-end lg:justify-between">
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div>
+              <div className="mb-3 flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-400/10">
+                  <Sparkles
+                    size={15}
+                    className="text-emerald-400"
+                  />
+                </div>
 
-        {/* TOTAL BALANCE */}
-
-        {preferences.showFinance && (
-          <button
-            type="button"
-            onClick={() =>
-              goToPage("finance")
-            }
-            className="group w-full text-left"
-          >
-            <DashboardCard color="green">
-              <div className="flex items-start justify-between">
-                <CardIcon color="green">
-                  <Wallet size={21} />
-                </CardIcon>
-
-                <ArrowUpRight
-                  size={18}
-                  className="text-white/20 transition group-hover:text-emerald-400"
-                />
-              </div>
-
-              <p className="text-base font-medium text-white/45">
-                Total Balance
-              </p>
-
-              <h2
-                className={`mt-2 text-3xl font-bold ${
-                  totalFinanceBalance.balance >= 0
-                    ? "text-emerald-400"
-                    : "text-red-400"
-                }`}
-              >
-                {formatMoney(
-                  totalFinanceBalance.balance
-                )}
-              </h2>
-
-              <div className="mt-3 flex flex-wrap gap-4 text-xs">
-                <span className="text-emerald-400">
-                  +{" "}
-                  {formatMoney(
-                    totalFinanceBalance.income
-                  )}
-                </span>
-
-                <span className="text-red-400">
-                  -{" "}
-                  {formatMoney(
-                    totalFinanceBalance.expense
-                  )}
+                <span className="text-sm font-medium text-emerald-400">
+                  {greeting}
                 </span>
               </div>
-            </DashboardCard>
-          </button>
-        )}
 
-        {/* TASKS */}
+              <h1 className="text-3xl font-bold tracking-tight sm:text-4xl lg:text-5xl">
+                {user?.displayName ||
+                  "Welcome"}
+              </h1>
 
-        {preferences.showTasks && (
-          <button
-            type="button"
-            onClick={() =>
-              goToPage("tasks")
-            }
-            className="group w-full text-left"
-          >
-            <DashboardCard color="blue">
-              <div className="flex items-start justify-between">
-                <CardIcon color="blue">
-                  <CheckSquare size={21} />
-                </CardIcon>
-
-                <ArrowUpRight
-                  size={18}
-                  className="text-white/20 transition group-hover:text-blue-400"
-                />
-              </div>
-
-              <p className="text-base font-medium text-white/45">
-                Tasks pending
+              <p className="mt-3 max-w-lg text-sm leading-6 text-white/40">
+                Everything important about your
+                day, all in one place.
               </p>
+            </div>
 
-              <h2 className="mt-2 text-3xl font-bold text-blue-400">
-                {taskStats.pending}
-              </h2>
-
-              <p className="mt-2 text-sm text-white/30">
-                {taskStats.completed} completed
-              </p>
-            </DashboardCard>
-          </button>
-        )}
-
-        {/* GOALS */}
-
-        {preferences.showGoals && (
-          <button
-            type="button"
-            onClick={() =>
-              goToPage("goals")
-            }
-            className="group w-full text-left"
-          >
-            <DashboardCard color="blue">
-              <div className="flex items-start justify-between">
-                <CardIcon color="blue">
-                  <Target size={21} />
-                </CardIcon>
-
-                <ArrowUpRight
-                  size={18}
-                  className="text-white/20 transition group-hover:text-blue-400"
-                />
-              </div>
-
-              <p className="text-base font-medium text-white/45">
-                Goal progress
-              </p>
-
-              <h2 className="mt-2 text-3xl font-bold text-blue-400">
-                {goalStats.percentage}%
-              </h2>
-
-              <ProgressBar
-                percentage={
-                  goalStats.percentage
-                }
-                color="blue"
+            <div className="flex items-center gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.035] px-4 py-3 backdrop-blur-xl">
+              <CalendarDays
+                size={17}
+                className="text-white/50"
               />
-            </DashboardCard>
-          </button>
-        )}
-
-        {/* HABITS */}
-
-        {preferences.showHabits && (
-          <button
-            type="button"
-            onClick={() =>
-              goToPage("habits")
-            }
-            className="group w-full text-left"
-          >
-            <DashboardCard color="green">
-              <div className="flex items-start justify-between">
-                <CardIcon color="green">
-                  <Repeat size={21} />
-                </CardIcon>
-
-                <ArrowUpRight
-                  size={18}
-                  className="text-white/20 transition group-hover:text-emerald-400"
-                />
-              </div>
-
-              <p className="text-base font-medium text-white/45">
-                Habits today
-              </p>
-
-              <h2 className="mt-2 text-3xl font-bold text-emerald-400">
-                {habitStats.completedToday}/
-                {habitStats.total}
-              </h2>
-
-              <p className="mt-2 text-sm text-white/30">
-                {habitStats.percentage}% completed
-              </p>
-            </DashboardCard>
-          </button>
-        )}
-      </div>
-
-      {/* =====================================================
-          EXCHANGE RATE
-      ====================================================== */}
-
-      {preferences.showFinance && (
-        <SectionCard
-          className="mb-6"
-          color="blue"
-        >
-          <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
-
-            <div className="flex items-center gap-3">
-              <CardIcon color="blue">
-                <DollarSign size={20} />
-              </CardIcon>
 
               <div>
-                <h2 className="font-semibold">
-                  Currency & Exchange Rate
-                </h2>
+                <p className="text-[10px] uppercase tracking-wider text-white/30">
+                  Today
+                </p>
 
-                <p className="mt-1 text-xs text-white/30">
-                  Click the currency to change it
+                <p className="mt-0.5 text-sm font-medium text-white/80">
+                  {today.toLocaleDateString(
+                    "en-US",
+                    {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                    }
+                  )}
                 </p>
               </div>
             </div>
+          </div>
 
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() =>
-                  setExchangeOpen(
-                    (previous) =>
-                      !previous
-                  )
-                }
-                className="flex min-w-[150px] items-center justify-between gap-4 rounded-2xl border border-blue-400/20 bg-blue-500/5 px-4 py-3 transition hover:bg-blue-500/10"
-              >
-                <div className="flex items-center gap-3">
+          {/* BALANCE */}
 
-                  <span className="text-lg font-bold text-blue-400">
-                    {
-                      exchangeCurrencyInfo.symbol
-                    }
+          <button
+            type="button"
+            onClick={() => goToPage("finance")}
+            className="mt-7 w-full rounded-[26px] border border-white/[0.08] bg-white/[0.035] p-5 text-left backdrop-blur-xl transition hover:border-emerald-400/20 hover:bg-white/[0.05] sm:p-6"
+          >
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+
+              <div>
+                <p className="text-xs font-medium text-white/35">
+                  Total Balance
+                </p>
+
+                <p
+                  className={`mt-2 text-3xl font-bold tracking-tight sm:text-4xl ${
+                    financeStats.totalBalance >= 0
+                      ? "text-white"
+                      : "text-red-400"
+                  }`}
+                >
+                  {formatMoney(
+                    financeStats.totalBalance
+                  )}
+                </p>
+
+                <div className="mt-3">
+                  {financeStats.totalBalance >= 0 ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/10 px-2.5 py-1 text-xs font-medium text-emerald-400">
+                      <TrendingUp size={12} />
+                      Positive balance
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-red-400/10 px-2.5 py-1 text-xs font-medium text-red-400">
+                      <TrendingDown size={12} />
+                      Negative balance
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1 text-sm text-white/30">
+                Open Finance
+                <ArrowUpRight size={15} />
+              </div>
+            </div>
+
+            <div className="mt-6 grid grid-cols-2 gap-3">
+
+              <div className="rounded-2xl border border-emerald-400/[0.08] bg-emerald-400/[0.04] p-4">
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <TrendingUp size={15} />
+                  <span className="text-xs">
+                    Income
                   </span>
-
-                  <div className="text-left">
-                    <p className="text-xs text-white/30">
-                      Exchange
-                    </p>
-
-                    <p className="font-semibold">
-                      {
-                        exchangeCurrencyInfo.code
-                      }
-                    </p>
-                  </div>
-
                 </div>
 
-                <ChevronDown
-                  size={17}
-                  className={`transition ${
-                    exchangeOpen
-                      ? "rotate-180"
-                      : ""
-                  }`}
+                <p className="mt-2 text-base font-semibold text-white">
+                  {formatMoney(
+                    financeStats.income
+                  )}
+                </p>
+
+                <p className="mt-1 text-[10px] text-white/25">
+                  This month
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-red-400/[0.08] bg-red-400/[0.04] p-4">
+                <div className="flex items-center gap-2 text-red-400">
+                  <TrendingDown size={15} />
+                  <span className="text-xs">
+                    Expenses
+                  </span>
+                </div>
+
+                <p className="mt-2 text-base font-semibold text-white">
+                  {formatMoney(
+                    financeStats.expense
+                  )}
+                </p>
+
+                <p className="mt-1 text-[10px] text-white/25">
+                  This month
+                </p>
+              </div>
+            </div>
+          </button>
+        </div>
+      </section>
+
+      {/* STATS */}
+
+      <section className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+
+        <StatCard
+          title="Tasks"
+          value={taskStats.pending}
+          subtitle="Pending"
+          icon={CheckSquare}
+          accent="blue"
+          onClick={() => goToPage("tasks")}
+        />
+
+        <StatCard
+          title="Goals"
+          value={goalStats.active}
+          subtitle="Active goals"
+          icon={Target}
+          accent="purple"
+          onClick={() => goToPage("goals")}
+        />
+
+        <StatCard
+          title="Habits"
+          value={`${habitStats.percentage}%`}
+          subtitle={`${habitStats.completedToday}/${habitStats.total} today`}
+          icon={Repeat}
+          accent="orange"
+          onClick={() => goToPage("habits")}
+        />
+
+        <StatCard
+          title="Workouts"
+          value={fitnessStats.total}
+          subtitle="Total workouts"
+          icon={Dumbbell}
+          accent="cyan"
+          onClick={() => goToPage("fitness")}
+        />
+      </section>
+
+      {/* FINANCE + TASKS */}
+
+      <section className="mt-5 grid gap-5 xl:grid-cols-[1.35fr_1fr]">
+
+        {preferences.showFinance && (
+          <GlassCard>
+            <SectionTitle
+              icon={TrendingUp}
+              title="Money Flow"
+              subtitle="Your last 7 days"
+              accent="emerald"
+              action="Finance"
+              onAction={() =>
+                goToPage("finance")
+              }
+            />
+
+            <div className="mt-6 h-[270px]">
+              <ResponsiveContainer
+                width="100%"
+                height="100%"
+              >
+                <BarChart
+                  data={last7Days}
+                  margin={{
+                    top: 5,
+                    right: 5,
+                    left: -25,
+                    bottom: 0,
+                  }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="rgba(255,255,255,0.055)"
+                    vertical={false}
+                  />
+
+                  <XAxis
+                    dataKey="name"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{
+                      fill: "rgba(255,255,255,0.35)",
+                      fontSize: 11,
+                    }}
+                  />
+
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{
+                      fill: "rgba(255,255,255,0.25)",
+                      fontSize: 10,
+                    }}
+                  />
+
+                  <Tooltip
+                    cursor={{
+                      fill: "rgba(255,255,255,0.025)",
+                    }}
+                    contentStyle={{
+                      background: "#101211",
+                      border:
+                        "1px solid rgba(255,255,255,0.1)",
+                      borderRadius: "14px",
+                      color: "#fff",
+                    }}
+                    formatter={(value) =>
+                      formatMoney(value)
+                    }
+                  />
+
+                  <Bar
+                    dataKey="income"
+                    name="Income"
+                    fill="#10b981"
+                    radius={[
+                      6,
+                      6,
+                      2,
+                      2,
+                    ]}
+                    maxBarSize={22}
+                  />
+
+                  <Bar
+                    dataKey="expense"
+                    name="Expense"
+                    fill="#ef4444"
+                    radius={[
+                      6,
+                      6,
+                      2,
+                      2,
+                    ]}
+                    maxBarSize={22}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="mt-2 flex items-center gap-5">
+              <LegendDot
+                label="Income"
+                className="bg-emerald-400"
+              />
+
+              <LegendDot
+                label="Expense"
+                className="bg-red-400"
+              />
+            </div>
+          </GlassCard>
+        )}
+
+        {preferences.showTasks && (
+          <GlassCard>
+            <SectionTitle
+              icon={CheckSquare}
+              title="Today's Focus"
+              subtitle={`${taskStats.pending} tasks waiting`}
+              accent="blue"
+              action="Tasks"
+              onAction={() =>
+                goToPage("tasks")
+              }
+            />
+
+            <div className="mt-5">
+              {taskStats.todayTasks.length >
+              0 ? (
+                <div className="space-y-2.5">
+                  {taskStats.todayTasks.map(
+                    (task, index) => (
+                      <button
+                        type="button"
+                        key={
+                          task.id ||
+                          `task-${index}`
+                        }
+                        onClick={() =>
+                          goToPage("tasks")
+                        }
+                        className="group flex w-full items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-3.5 text-left transition hover:border-blue-400/20 hover:bg-blue-400/[0.04]"
+                      >
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-400/10 text-blue-400">
+                          <CheckSquare size={16} />
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-white/85">
+                            {task.title ||
+                              task.name ||
+                              "Untitled Task"}
+                          </p>
+
+                          {task.priority && (
+                            <p className="mt-1 text-[10px] text-white/30">
+                              {task.priority}
+                            </p>
+                          )}
+                        </div>
+
+                        <ChevronRight
+                          size={16}
+                          className="text-white/20 transition group-hover:translate-x-0.5 group-hover:text-blue-400"
+                        />
+                      </button>
+                    )
+                  )}
+                </div>
+              ) : (
+                <EmptyState
+                  icon={CircleCheck}
+                  title="All clear"
+                  text="You have no pending tasks for today."
+                  accent="blue"
                 />
-              </button>
+              )}
+            </div>
+          </GlassCard>
+        )}
+      </section>
 
-              {exchangeOpen && (
-                <div className="absolute right-0 top-full z-30 mt-2 w-56 overflow-hidden rounded-2xl border border-blue-400/20 bg-[#151515] p-2 shadow-2xl">
+      {/* GOALS + HABITS */}
 
-                  {Object.values(
-                    CURRENCIES
-                  ).map((currency) => {
-                    const active =
-                      preferences.exchangeCurrency ===
-                      currency.code;
+      <section className="mt-5 grid gap-5 lg:grid-cols-2">
+
+        {preferences.showGoals && (
+          <GlassCard>
+            <SectionTitle
+              icon={Target}
+              title="Goals"
+              subtitle={`${goalStats.completed} completed`}
+              accent="purple"
+              action="View Goals"
+              onAction={() =>
+                goToPage("goals")
+              }
+            />
+
+            {goalStats.activeGoals.length >
+            0 ? (
+              <div className="mt-5 space-y-4">
+                {goalStats.activeGoals.map(
+                  (goal, index) => {
+                    const current = Number(
+                      goal.current ||
+                        goal.progress ||
+                        goal.completedAmount ||
+                        0
+                    );
+
+                    const target = Number(
+                      goal.target ||
+                        goal.goal ||
+                        goal.targetAmount ||
+                        100
+                    );
+
+                    const progress =
+                      target > 0
+                        ? Math.min(
+                            Math.round(
+                              (current /
+                                target) *
+                                100
+                            ),
+                            100
+                          )
+                        : 0;
 
                     return (
                       <button
-                        key={currency.code}
                         type="button"
-                        onClick={() =>
-                          changeExchangeCurrency(
-                            currency.code
-                          )
+                        key={
+                          goal.id ||
+                          `goal-${index}`
                         }
-                        className={`flex w-full items-center justify-between rounded-xl px-3 py-3 text-left transition ${
-                          active
-                            ? "bg-blue-500/15"
-                            : "hover:bg-white/[0.06]"
-                        }`}
+                        onClick={() =>
+                          goToPage("goals")
+                        }
+                        className="w-full rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4 text-left transition hover:border-purple-400/20 hover:bg-purple-400/[0.035]"
                       >
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="truncate text-sm font-medium text-white/80">
+                            {goal.title ||
+                              goal.name ||
+                              "Untitled Goal"}
+                          </p>
 
-                          <span className="w-7 text-center font-semibold text-blue-400">
-                            {currency.symbol}
+                          <span className="shrink-0 text-xs font-semibold text-purple-400">
+                            {progress}%
                           </span>
-
-                          <div>
-                            <p className="text-sm font-medium">
-                              {currency.code}
-                            </p>
-
-                            <p className="text-[10px] text-white/30">
-                              {currency.name}
-                            </p>
-                          </div>
-
                         </div>
 
-                        {active && (
-                          <span className="text-blue-400">
-                            <Check size={16} />
-                          </span>
-                        )}
+                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.05]">
+                          <div
+                            className="h-full rounded-full bg-purple-400 transition-all duration-500"
+                            style={{
+                              width: `${progress}%`,
+                            }}
+                          />
+                        </div>
                       </button>
                     );
-                  })}
-
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-5 rounded-2xl border border-blue-400/10 bg-blue-500/[0.03] p-5">
-
-            {exchangeLoading ? (
-              <div className="flex items-center gap-3">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/10 border-t-blue-400" />
-
-                <span className="text-sm text-white/40">
-                  Loading exchange rate...
-                </span>
+                  }
+                )}
               </div>
-            ) : exchangeError ? (
-              <div>
-                <div className="flex items-center gap-2 text-red-400">
-                  <RefreshCw size={16} />
+            ) : (
+              <EmptyState
+                icon={Target}
+                title="No active goals"
+                text="Create a goal and start making progress."
+                accent="purple"
+              />
+            )}
+          </GlassCard>
+        )}
 
-                  <p className="text-sm font-medium">
-                    Exchange rate unavailable
+        {preferences.showHabits && (
+          <GlassCard>
+            <SectionTitle
+              icon={Repeat}
+              title="Daily Habits"
+              subtitle="Today's progress"
+              accent="orange"
+              action="View Habits"
+              onAction={() =>
+                goToPage("habits")
+              }
+            />
+
+            <div className="mt-5 flex items-center gap-6">
+              <div className="relative flex h-32 w-32 shrink-0 items-center justify-center">
+                <svg
+                  className="absolute inset-0 h-full w-full -rotate-90"
+                  viewBox="0 0 100 100"
+                >
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="42"
+                    fill="none"
+                    stroke="rgba(255,255,255,0.05)"
+                    strokeWidth="8"
+                  />
+
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="42"
+                    fill="none"
+                    stroke="#fb923c"
+                    strokeWidth="8"
+                    strokeLinecap="round"
+                    strokeDasharray="263.89"
+                    strokeDashoffset={
+                      263.89 -
+                      (263.89 *
+                        habitStats.percentage) /
+                        100
+                    }
+                  />
+                </svg>
+
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-white">
+                    {habitStats.percentage}%
+                  </p>
+
+                  <p className="text-[10px] text-white/30">
+                    completed
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <p className="text-2xl font-bold text-white">
+                    {habitStats.completedToday}
+                  </p>
+
+                  <p className="text-xs text-white/35">
+                    Completed today
                   </p>
                 </div>
 
-                <p className="mt-2 text-xs text-white/25">
-                  Please check your internet connection and try again.
-                </p>
-              </div>
-            ) : exchangeRate !== null ? (
-              <div>
-                <p className="text-sm text-white/40">
-                  Current exchange rate
-                </p>
+                <div>
+                  <p className="text-2xl font-bold text-orange-400">
+                    {habitStats.remaining}
+                  </p>
 
-                <div className="mt-2 flex flex-wrap items-baseline gap-2">
-
-                  <span className="text-2xl font-bold">
-                    1{" "}
-                    {
-                      exchangeCurrencyInfo.code
-                    }
-                  </span>
-
-                  <span className="text-white/30">
-                    =
-                  </span>
-
-                  <span className="text-2xl font-bold text-blue-400">
-                    {
-                      currencyInfo.symbol
-                    }{" "}
-                    {Number(
-                      exchangeRate
-                    ).toLocaleString(
-                      undefined,
-                      {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 4,
-                      }
-                    )}
-                  </span>
-
-                  <span className="text-lg font-semibold text-blue-400">
-                    {
-                      currencyInfo.code
-                    }
-                  </span>
-
+                  <p className="text-xs text-white/35">
+                    Remaining
+                  </p>
                 </div>
-
-                <p className="mt-2 text-xs text-white/25">
-                  1{" "}
-                  {
-                    exchangeCurrencyInfo.code
-                  }{" "}
-                  converted to your main currency (
-                  {
-                    currencyInfo.code
-                  }
-                  )
-                </p>
               </div>
-            ) : null}
+            </div>
+          </GlassCard>
+        )}
+      </section>
 
-          </div>
-        </SectionCard>
-      )}
-
-      {/* =====================================================
-          FINANCE + TASKS
-      ====================================================== */}
-
-      {(preferences.showFinance ||
-        preferences.showTasks) && (
-        <div className="mb-6 grid gap-5 lg:grid-cols-2">
-
-          {preferences.showFinance && (
-            <SectionCard color="green">
-
-              <SectionHeader
-                icon={<Wallet size={20} />}
-                title="Finance Overview"
-                subtitle="This month"
-                action={() =>
-                  goToPage("finance")
-                }
-                color="green"
-              />
-
-              <div className="grid grid-cols-2 gap-3">
-
-                <MiniCard
-                  icon={
-                    <TrendingUp size={17} />
-                  }
-                  title="Income"
-                  value={
-                    financeStats.income
-                  }
-                  positive
-                  currencyInfo={
-                    currencyInfo
-                  }
-                />
-
-                <MiniCard
-                  icon={
-                    <TrendingDown size={17} />
-                  }
-                  title="Expenses"
-                  value={
-                    financeStats.expense
-                  }
-                  negative
-                  currencyInfo={
-                    currencyInfo
-                  }
-                />
-
-              </div>
-
-              <button
-                type="button"
-                onClick={() =>
-                  goToPage("finance")
-                }
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500/10 px-4 py-3 text-sm text-emerald-400 transition hover:bg-emerald-500/15"
-              >
-                Open Finance
-                <ArrowUpRight size={15} />
-              </button>
-
-            </SectionCard>
-          )}
-
-          {preferences.showTasks && (
-            <SectionCard color="blue">
-
-              <SectionHeader
-                icon={
-                  <CheckSquare size={20} />
-                }
-                title="Task Progress"
-                subtitle="Your current task progress"
-                action={() =>
-                  goToPage("tasks")
-                }
-                color="blue"
-              />
-
-              <div className="mb-4 h-3 overflow-hidden rounded-full bg-white/10">
-
-                <div
-                  className="h-full rounded-full bg-blue-400 transition-all"
-                  style={{
-                    width: `${taskStats.percentage}%`,
-                  }}
-                />
-
-              </div>
-
-              <div className="flex justify-between text-sm">
-
-                <span className="text-white/40">
-                  {taskStats.completed} completed
-                </span>
-
-                <span className="text-blue-400">
-                  {taskStats.percentage}%
-                </span>
-
-              </div>
-
-              <button
-                type="button"
-                onClick={() =>
-                  goToPage("tasks")
-                }
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-500/10 px-4 py-3 text-sm text-blue-400 transition hover:bg-blue-500/15"
-              >
-                Open Tasks
-                <ArrowUpRight size={15} />
-              </button>
-
-            </SectionCard>
-          )}
-
-        </div>
-      )}
-
-      {/* =====================================================
-          7 DAY FINANCE
-      ====================================================== */}
+      {/* EXPENSES */}
 
       {preferences.showFinance && (
-        <SectionCard
-          className="mb-6"
-          color="green"
-        >
-
-          <SectionHeader
-            icon={
-              <TrendingUp size={20} />
-            }
-            title="7-Day Finance"
-            subtitle="Income and expenses for the last 7 days"
-            action={() =>
+        <GlassCard className="mt-5">
+          <SectionTitle
+            icon={TrendingDown}
+            title="Where Your Money Goes"
+            subtitle="This month's expenses"
+            accent="red"
+            action="View Finance"
+            onAction={() =>
               goToPage("finance")
             }
-            color="green"
           />
 
-          <div className="h-[300px] w-full">
-
-            <ResponsiveContainer
-              width="100%"
-              height="100%"
-            >
-
-              <BarChart data={last7Days}>
-
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="rgba(255,255,255,0.06)"
-                />
-
-                <XAxis
-                  dataKey="day"
-                  stroke="rgba(255,255,255,0.35)"
-                  tickLine={false}
-                  axisLine={false}
-                />
-
-                <YAxis
-                  stroke="rgba(255,255,255,0.35)"
-                  tickLine={false}
-                  axisLine={false}
-                />
-
-                <Tooltip
-                  contentStyle={{
-                    background: "#111",
-                    border:
-                      "1px solid rgba(255,255,255,0.1)",
-                    borderRadius: "16px",
-                    color: "#fff",
-                  }}
-                  formatter={(value) =>
-                    formatMoney(value)
-                  }
-                />
-
-                <Bar
-                  dataKey="income"
-                  name="Income"
-                  fill="#34d399"
-                  radius={[6, 6, 0, 0]}
-                />
-
-                <Bar
-                  dataKey="expense"
-                  name="Expense"
-                  fill="#f87171"
-                  radius={[6, 6, 0, 0]}
-                />
-
-              </BarChart>
-
-            </ResponsiveContainer>
-
-          </div>
-
-        </SectionCard>
-      )}
-
-      {/* =====================================================
-          MONTHLY EXPENSE
-      ====================================================== */}
-
-      {preferences.showFinance && (
-        <SectionCard
-          className="mb-6"
-          color="red"
-        >
-
-          <SectionHeader
-            icon={
-              <TrendingDown size={20} />
-            }
-            title="Monthly Expense Breakdown"
-            subtitle="Where your money is going this month"
-            action={() =>
-              goToPage("finance")
-            }
-            color="red"
-          />
-
-          {monthlyAnalytics.length === 0 ? (
-            <EmptyState text="No expenses recorded this month." />
-          ) : (
-            <div className="space-y-5">
-
-              {monthlyAnalytics.map(
-                (item) => {
-
+          {expenseBreakdown.length > 0 ? (
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {expenseBreakdown.map(
+                (item, index) => {
                   const percentage =
                     financeStats.expense > 0
                       ? Math.round(
-                          (item.amount /
+                          (item.value /
                             financeStats.expense) *
                             100
                         )
                       : 0;
 
                   return (
-                    <div
-                      key={item.category}
+                    <button
+                      type="button"
+                      key={`${item.name}-${index}`}
+                      onClick={() =>
+                        goToPage("finance")
+                      }
+                      className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4 text-left transition hover:border-red-400/20 hover:bg-red-400/[0.035]"
                     >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="truncate text-sm font-medium text-white/70">
+                          {item.name}
+                        </p>
 
-                      <div className="mb-2 flex items-center justify-between">
-
-                        <span className="text-sm">
-                          {item.category}
+                        <span className="text-xs font-semibold text-red-400">
+                          {percentage}%
                         </span>
-
-                        <span className="text-sm text-red-400/80">
-                          {formatMoney(
-                            item.amount
-                          )}
-                        </span>
-
                       </div>
 
-                      <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                      <p className="mt-2 text-base font-bold text-white">
+                        {formatMoney(
+                          item.value
+                        )}
+                      </p>
 
+                      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
                         <div
-                          className="h-full rounded-full bg-red-400 transition-all"
+                          className="h-full rounded-full bg-red-400"
                           style={{
                             width: `${percentage}%`,
                           }}
                         />
-
                       </div>
-
-                      <p className="mt-1 text-right text-xs text-white/20">
-                        {percentage}%
-                      </p>
-
-                    </div>
+                    </button>
                   );
                 }
               )}
-
             </div>
+          ) : (
+            <EmptyState
+              icon={TrendingDown}
+              title="No expenses yet"
+              text="Your expense categories will appear here."
+              accent="red"
+            />
           )}
-
-        </SectionCard>
+        </GlassCard>
       )}
 
-      {/* =====================================================
-          QUICK OVERVIEW
-      ====================================================== */}
+      {/* EVENTS + TRAVEL */}
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="mt-5 grid gap-5 xl:grid-cols-2">
 
-        {preferences.showFitness && (
-          <button
-            type="button"
-            onClick={() =>
-              goToPage("fitness")
-            }
-            className="group text-left"
-          >
-            <QuickCard
-              icon={
-                <Dumbbell size={20} />
-              }
-              title="Workouts"
-              value={
-                fitnessStats.workouts
-              }
-              color="green"
-            />
-          </button>
-        )}
-
-        <button
-          type="button"
-          onClick={() =>
-            goToPage("calendar")
-          }
-          className="group text-left"
-        >
-          <QuickCard
-            icon={
-              <CalendarDays size={20} />
-            }
+        <GlassCard>
+          <SectionTitle
+            icon={CalendarDays}
             title="Upcoming Events"
-            value={
-              upcomingEvents.length
-            }
-            color="blue"
-          />
-        </button>
-
-        {preferences.showTravel && (
-          <button
-            type="button"
-            onClick={() =>
-              goToPage("travel")
-            }
-            className="group text-left"
-          >
-            <QuickCard
-              icon={<Map size={20} />}
-              title="Trips"
-              value={
-                data.travel.length
-              }
-              color="blue"
-            />
-          </button>
-        )}
-
-        <button
-          type="button"
-          onClick={() =>
-            goToPage("notes")
-          }
-          className="group text-left"
-        >
-          <QuickCard
-            icon={
-              <FileText size={20} />
-            }
-            title="Notes"
-            value={
-              data.notes.length
-            }
-            color="blue"
-          />
-        </button>
-
-      </div>
-
-      {/* =====================================================
-          EVENTS + TRAVEL
-      ====================================================== */}
-
-      <div className="grid gap-5 lg:grid-cols-2">
-
-        {/* EVENTS */}
-
-        <SectionCard color="blue">
-
-          <SectionHeader
-            icon={
-              <CalendarDays size={20} />
-            }
-            title="Upcoming Events"
-            subtitle="From your calendar"
-            action={() =>
+            subtitle="What's coming next"
+            accent="blue"
+            action="Calendar"
+            onAction={() =>
               goToPage("calendar")
             }
-            color="blue"
           />
 
-          {upcomingEvents.length === 0 ? (
-            <EmptyState text="No upcoming events." />
-          ) : (
-            <div className="space-y-3">
-
+          {upcomingEvents.length > 0 ? (
+            <div className="mt-5 space-y-2.5">
               {upcomingEvents.map(
-                (event) => (
-                  <button
-                    key={event.id}
-                    type="button"
-                    onClick={() =>
-                      goToPage("calendar")
-                    }
-                    className="group flex w-full items-center gap-3 rounded-2xl border border-blue-400/10 bg-blue-500/[0.03] p-4 text-left transition hover:bg-blue-500/[0.07]"
-                  >
+                (event, index) => {
+                  const date = parseDate(
+                    event.date ||
+                      event.startDate ||
+                      event.start
+                  );
 
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
-                      <Clock size={17} />
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-
-                      <p className="truncate font-medium">
-                        {event.title ||
-                          "Untitled Event"}
-                      </p>
-
-                      <p className="mt-1 text-xs text-white/30">
-                        {event.date}
-                      </p>
-
-                    </div>
-
-                    <ArrowUpRight
-                      size={16}
-                      className="shrink-0 text-white/20 transition group-hover:text-blue-400"
-                    />
-
-                  </button>
-                )
-              )}
-
-            </div>
-          )}
-
-        </SectionCard>
-
-        {/* TRAVEL */}
-
-        {preferences.showTravel && (
-          <SectionCard color="blue">
-
-            <SectionHeader
-              icon={<Map size={20} />}
-              title="Upcoming Travel"
-              subtitle="Your next journeys"
-              action={() =>
-                goToPage("travel")
-              }
-              color="blue"
-            />
-
-            {upcomingTrips.length === 0 ? (
-              <EmptyState text="No upcoming trips." />
-            ) : (
-              <div className="space-y-3">
-
-                {upcomingTrips.map(
-                  (trip) => (
+                  return (
                     <button
-                      key={trip.id}
                       type="button"
-                      onClick={() =>
-                        goToPage("travel")
+                      key={
+                        event.id ||
+                        `event-${index}`
                       }
-                      className="group w-full rounded-2xl border border-blue-400/10 bg-blue-500/[0.03] p-4 text-left transition hover:bg-blue-500/[0.07]"
+                      onClick={() =>
+                        goToPage("calendar")
+                      }
+                      className="group flex w-full items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-3 text-left transition hover:border-blue-400/20 hover:bg-blue-400/[0.035]"
                     >
+                      <div className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl bg-blue-400/10 text-blue-400">
+                        {date && (
+                          <>
+                            <span className="text-[9px] uppercase">
+                              {date.toLocaleDateString(
+                                "en-US",
+                                {
+                                  month: "short",
+                                }
+                              )}
+                            </span>
 
-                      <div className="flex items-center justify-between gap-3">
-
-                        <p className="font-medium">
-                          {trip.place ||
-                            trip.title ||
-                            "Unnamed Trip"}
-                        </p>
-
-                        <ArrowUpRight
-                          size={16}
-                          className="shrink-0 text-white/20 transition group-hover:text-blue-400"
-                        />
-
+                            <span className="text-base font-bold">
+                              {date.getDate()}
+                            </span>
+                          </>
+                        )}
                       </div>
 
-                      {trip.date && (
-                        <span className="mt-1 block text-xs text-white/30">
-                          {trip.date}
-                        </span>
-                      )}
-
-                      {trip.notes && (
-                        <p className="mt-2 line-clamp-2 text-xs text-white/30">
-                          {trip.notes}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-white/80">
+                          {event.title ||
+                            event.name ||
+                            "Untitled Event"}
                         </p>
-                      )}
 
+                        <div className="mt-1 flex items-center gap-1 text-[10px] text-white/30">
+                          <Clock size={11} />
+
+                          <span>
+                            {event.time ||
+                              (date
+                                ? date.toLocaleTimeString(
+                                    "en-US",
+                                    {
+                                      hour: "numeric",
+                                      minute:
+                                        "2-digit",
+                                    }
+                                  )
+                                : "No time")}
+                          </span>
+                        </div>
+                      </div>
+
+                      <ChevronRight
+                        size={16}
+                        className="text-white/15 transition group-hover:text-blue-400"
+                      />
                     </button>
-                  )
+                  );
+                }
+              )}
+            </div>
+          ) : (
+            <EmptyState
+              icon={CalendarDays}
+              title="No upcoming events"
+              text="Your calendar is clear for now."
+              accent="blue"
+            />
+          )}
+        </GlassCard>
+
+        {preferences.showTravel && (
+          <GlassCard>
+            <SectionTitle
+              icon={Map}
+              title="Upcoming Travel"
+              subtitle="Your next adventures"
+              accent="teal"
+              action="Travel"
+              onAction={() =>
+                goToPage("travel")
+              }
+            />
+
+            {upcomingTrips.length > 0 ? (
+              <div className="mt-5 space-y-2.5">
+                {upcomingTrips.map(
+                  (trip, index) => {
+                    const date = parseDate(
+                      trip.date ||
+                        trip.startDate ||
+                        trip.fromDate
+                    );
+
+                    return (
+                      <button
+                        type="button"
+                        key={
+                          trip.id ||
+                          `trip-${index}`
+                        }
+                        onClick={() =>
+                          goToPage("travel")
+                        }
+                        className="group flex w-full items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-3.5 text-left transition hover:border-teal-400/20 hover:bg-teal-400/[0.035]"
+                      >
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-400/10 text-teal-400">
+                          <Map size={18} />
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-white/80">
+                            {trip.title ||
+                              trip.name ||
+                              trip.destination ||
+                              "Untitled Trip"}
+                          </p>
+
+                          <p className="mt-1 truncate text-[10px] text-white/30">
+                            {trip.destination ||
+                              trip.location ||
+                              (date
+                                ? formatDate(
+                                    date
+                                  )
+                                : "No date")}
+                          </p>
+                        </div>
+
+                        <ChevronRight
+                          size={16}
+                          className="text-white/15 transition group-hover:text-teal-400"
+                        />
+                      </button>
+                    );
+                  }
                 )}
-
               </div>
+            ) : (
+              <EmptyState
+                icon={Map}
+                title="No upcoming trips"
+                text="Your future adventures will appear here."
+                accent="teal"
+              />
             )}
-
-          </SectionCard>
+          </GlassCard>
         )}
+      </section>
 
-      </div>
+      {/* NOTES */}
 
-      {/* =====================================================
-          NOTES
-      ====================================================== */}
-
-      <SectionCard
-        className="mt-5"
-        color="blue"
-      >
-
-        <SectionHeader
-          icon={
-            <FileText size={20} />
-          }
+      <GlassCard className="mt-5">
+        <SectionTitle
+          icon={FileText}
           title="Recent Notes"
-          subtitle="Your latest notes"
-          action={() =>
+          subtitle="Your latest thoughts"
+          accent="violet"
+          action="View Notes"
+          onAction={() =>
             goToPage("notes")
           }
-          color="blue"
         />
 
-        {recentNotes.length === 0 ? (
-          <EmptyState text="No notes yet." />
-        ) : (
-          <div className="grid gap-3 md:grid-cols-3">
-
+        {recentNotes.length > 0 ? (
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
             {recentNotes.map(
-              (note) => (
+              (note, index) => (
                 <button
-                  key={note.id}
                   type="button"
+                  key={
+                    note.id ||
+                    `note-${index}`
+                  }
                   onClick={() =>
                     goToPage("notes")
                   }
-                  className="group rounded-2xl border border-blue-400/10 bg-blue-500/[0.03] p-4 text-left transition hover:bg-blue-500/[0.07]"
+                  className="group rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4 text-left transition hover:border-violet-400/20 hover:bg-violet-400/[0.035]"
                 >
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-400/10 text-violet-400">
+                      <FileText size={16} />
+                    </div>
 
-                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-white/80">
+                        {note.title ||
+                          note.name ||
+                          "Untitled Note"}
+                      </p>
 
-                    <p className="font-medium">
-                      {note.title ||
-                        "Untitled"}
-                    </p>
+                      {(note.content ||
+                        note.text ||
+                        note.description) && (
+                        <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-white/30">
+                          {note.content ||
+                            note.text ||
+                            note.description}
+                        </p>
+                      )}
+                    </div>
 
                     <ArrowUpRight
                       size={15}
-                      className="shrink-0 text-white/20 transition group-hover:text-blue-400"
+                      className="text-white/15 transition group-hover:text-violet-400"
                     />
-
                   </div>
-
-                  <p className="mt-2 line-clamp-3 text-sm text-white/30">
-                    {note.content ||
-                      note.text ||
-                      "No content"}
-                  </p>
-
                 </button>
               )
             )}
-
           </div>
+        ) : (
+          <EmptyState
+            icon={FileText}
+            title="No notes yet"
+            text="Create your first note to see it here."
+            accent="violet"
+          />
         )}
-
-      </SectionCard>
-
-      {/* =====================================================
-          SETTINGS HINT
-      ====================================================== */}
-
-      {!preferences.showFinance &&
-        !preferences.showTasks &&
-        !preferences.showGoals &&
-        !preferences.showHabits &&
-        !preferences.showFitness &&
-        !preferences.showTravel && (
-          <div className="mt-6 rounded-3xl border border-blue-400/10 bg-blue-500/[0.03] p-8 text-center">
-
-            <Settings2
-              size={28}
-              className="mx-auto mb-3 text-blue-400/40"
-            />
-
-            <h3 className="font-semibold">
-              Dashboard is customized
-            </h3>
-
-            <p className="mx-auto mt-2 max-w-md text-sm text-white/30">
-              All optional dashboard sections
-              are currently hidden. You can
-              enable them again from Settings.
-            </p>
-
-          </div>
-        )}
+      </GlassCard>
 
     </div>
   );
 }
 
-// ===========================================================
-// DATE FORMAT
-// ===========================================================
+/*
+|--------------------------------------------------------------------------
+| Stat Card
+|--------------------------------------------------------------------------
+*/
 
-function formatDate(date) {
-  const year =
-    date.getFullYear();
-
-  const month =
-    String(
-      date.getMonth() + 1
-    ).padStart(2, "0");
-
-  const day =
-    String(
-      date.getDate()
-    ).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
-}
-
-// ===========================================================
-// COLOR HELPERS
-// ===========================================================
-
-function getCardColor(color) {
-  if (color === "green") {
-    return {
-      border:
-        "border-emerald-400/10",
-      background:
-        "bg-emerald-500/[0.025]",
-      hover:
-        "group-hover:border-emerald-400/25 group-hover:bg-emerald-500/[0.04]",
-    };
-  }
-
-  if (color === "red") {
-    return {
-      border:
-        "border-red-400/10",
-      background:
-        "bg-red-500/[0.025]",
-      hover:
-        "group-hover:border-red-400/25 group-hover:bg-red-500/[0.04]",
-    };
-  }
-
-  if (color === "blue") {
-    return {
-      border:
-        "border-blue-400/10",
-      background:
-        "bg-blue-500/[0.025]",
-      hover:
-        "group-hover:border-blue-400/25 group-hover:bg-blue-500/[0.04]",
-    };
-  }
-
-  return {
-    border:
-      "border-white/10",
-    background:
-      "bg-white/[0.04]",
-    hover:
-      "group-hover:border-white/20 group-hover:bg-white/[0.06]",
-  };
-}
-
-// ===========================================================
-// DASHBOARD CARD
-// ===========================================================
-
-function DashboardCard({
-  children,
-  color = "default",
-}) {
-  const colors =
-    getCardColor(color);
-
-  return (
-    <div
-      className={`rounded-3xl border ${colors.border} ${colors.background} p-5 shadow-xl shadow-black/10 backdrop-blur-2xl transition ${colors.hover}`}
-    >
-      {children}
-    </div>
-  );
-}
-
-// ===========================================================
-// CARD ICON
-// ===========================================================
-
-function CardIcon({
-  children,
-  color = "default",
-}) {
-  const classes = {
-    green:
-      "bg-emerald-500/10 text-emerald-400",
-    red:
-      "bg-red-500/10 text-red-400",
-    blue:
-      "bg-blue-500/10 text-blue-400",
-    default:
-      "bg-white/10 text-white/70",
-  };
-
-  return (
-    <div
-      className={`mb-5 flex h-11 w-11 items-center justify-center rounded-2xl ${
-        classes[color] ||
-        classes.default
-      }`}
-    >
-      {children}
-    </div>
-  );
-}
-
-// ===========================================================
-// SECTION CARD
-// ===========================================================
-
-function SectionCard({
-  children,
-  className = "",
-  color = "default",
-}) {
-  const colors =
-    getCardColor(color);
-
-  return (
-    <div
-      className={`rounded-3xl border ${colors.border} ${colors.background} p-5 shadow-xl shadow-black/10 backdrop-blur-2xl sm:p-6 ${className}`}
-    >
-      {children}
-    </div>
-  );
-}
-
-// ===========================================================
-// SECTION HEADER
-// ===========================================================
-
-function SectionHeader({
-  icon,
+function StatCard({
   title,
+  value,
   subtitle,
-  action,
-  color = "default",
+  icon: Icon,
+  accent,
+  onClick,
 }) {
-  const iconClasses = {
-    green:
-      "bg-emerald-500/10 text-emerald-400",
-    red:
-      "bg-red-500/10 text-red-400",
-    blue:
-      "bg-blue-500/10 text-blue-400",
-    default:
-      "bg-white/10 text-white/70",
+  const accents = {
+    blue: {
+      bg: "bg-blue-400/10",
+      text: "text-blue-400",
+      border:
+        "hover:border-blue-400/20",
+    },
+
+    purple: {
+      bg: "bg-purple-400/10",
+      text: "text-purple-400",
+      border:
+        "hover:border-purple-400/20",
+    },
+
+    orange: {
+      bg: "bg-orange-400/10",
+      text: "text-orange-400",
+      border:
+        "hover:border-orange-400/20",
+    },
+
+    cyan: {
+      bg: "bg-cyan-400/10",
+      text: "text-cyan-400",
+      border:
+        "hover:border-cyan-400/20",
+    },
   };
 
-  const arrowClasses = {
-    green:
-      "hover:bg-emerald-500/10 hover:text-emerald-400",
-    red:
-      "hover:bg-red-500/10 hover:text-red-400",
-    blue:
-      "hover:bg-blue-500/10 hover:text-blue-400",
-    default:
-      "hover:bg-white/[0.1] hover:text-white",
-  };
+  const style =
+    accents[accent] ||
+    accents.blue;
 
   return (
-    <div className="mb-6 flex items-center justify-between gap-3">
-
-      <div className="flex items-center gap-3">
-
+    <button
+      type="button"
+      onClick={onClick}
+      className={`group rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4 text-left transition duration-200 ${style.border}`}
+    >
+      <div className="flex items-center justify-between">
         <div
-          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-            iconClasses[color] ||
-            iconClasses.default
-          }`}
+          className={`flex h-9 w-9 items-center justify-center rounded-xl ${style.bg} ${style.text}`}
         >
-          {icon}
+          <Icon size={17} />
         </div>
 
-        <div>
+        <ArrowUpRight
+          size={15}
+          className="text-white/15 transition group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+        />
+      </div>
 
-          <h2 className="font-semibold">
+      <p className="mt-4 text-xs text-white/35">
+        {title}
+      </p>
+
+      <p className="mt-1 text-xl font-bold text-white">
+        {value}
+      </p>
+
+      <p className="mt-1 text-[10px] text-white/25">
+        {subtitle}
+      </p>
+    </button>
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Glass Card
+|--------------------------------------------------------------------------
+*/
+
+function GlassCard({
+  children,
+  className = "",
+}) {
+  return (
+    <section
+      className={`rounded-[26px] border border-white/[0.07] bg-white/[0.025] p-4 shadow-xl backdrop-blur-xl sm:p-5 ${className}`}
+    >
+      {children}
+    </section>
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Section Title
+|--------------------------------------------------------------------------
+*/
+
+function SectionTitle({
+  icon: Icon,
+  title,
+  subtitle,
+  accent,
+  action,
+  onAction,
+}) {
+  const colors = {
+    emerald:
+      "bg-emerald-400/10 text-emerald-400",
+    blue:
+      "bg-blue-400/10 text-blue-400",
+    purple:
+      "bg-purple-400/10 text-purple-400",
+    orange:
+      "bg-orange-400/10 text-orange-400",
+    red:
+      "bg-red-400/10 text-red-400",
+    teal:
+      "bg-teal-400/10 text-teal-400",
+    violet:
+      "bg-violet-400/10 text-violet-400",
+  };
+
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex min-w-0 items-center gap-3">
+        <div
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+            colors[accent] ||
+            colors.emerald
+          }`}
+        >
+          <Icon size={18} />
+        </div>
+
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-semibold text-white/85">
             {title}
           </h2>
 
-          <p className="mt-1 text-xs text-white/30">
+          <p className="mt-0.5 truncate text-[10px] text-white/25">
             {subtitle}
           </p>
-
         </div>
-
       </div>
 
       {action && (
         <button
           type="button"
-          onClick={action}
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/[0.05] text-white/30 transition ${
-            arrowClasses[color] ||
-            arrowClasses.default
-          }`}
-          aria-label={`Open ${title}`}
+          onClick={onAction}
+          className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-white/35 transition hover:text-white/70"
         >
-          <ArrowUpRight size={16} />
+          {action}
+          <ChevronRight size={13} />
         </button>
       )}
-
     </div>
   );
 }
 
-// ===========================================================
-// MINI CARD
-// ===========================================================
+/*
+|--------------------------------------------------------------------------
+| Legend
+|--------------------------------------------------------------------------
+*/
 
-function MiniCard({
-  icon,
-  title,
-  value,
-  positive,
-  negative,
-  currencyInfo,
+function LegendDot({
+  label,
+  className,
 }) {
   return (
-    <div
-      className={`rounded-2xl p-4 ${
-        positive
-          ? "border border-emerald-400/10 bg-emerald-500/[0.04]"
-          : negative
-          ? "border border-red-400/10 bg-red-500/[0.04]"
-          : "bg-white/[0.04]"
-      }`}
-    >
+    <div className="flex items-center gap-2">
+      <span
+        className={`h-2 w-2 rounded-full ${className}`}
+      />
 
-      <div
-        className={`flex items-center gap-2 text-xs ${
-          positive
-            ? "text-emerald-400"
-            : negative
-            ? "text-red-400"
-            : "text-white/40"
-        }`}
-      >
-
-        {icon}
-
-        <span>{title}</span>
-
-      </div>
-
-      <p
-        className={`mt-2 text-lg font-semibold ${
-          positive
-            ? "text-emerald-400"
-            : negative
-            ? "text-red-400"
-            : "text-white"
-        }`}
-      >
-        {currencyInfo.symbol}{" "}
-
-        {Number(
-          value || 0
-        ).toLocaleString(
-          undefined,
-          {
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 2,
-          }
-        )}
-      </p>
-
+      <span className="text-[10px] text-white/30">
+        {label}
+      </span>
     </div>
   );
 }
 
-// ===========================================================
-// QUICK CARD
-// ===========================================================
+/*
+|--------------------------------------------------------------------------
+| Empty State
+|--------------------------------------------------------------------------
+*/
 
-function QuickCard({
-  icon,
+function EmptyState({
+  icon: Icon,
   title,
-  value,
-  color = "default",
+  text,
+  accent,
 }) {
   const colors = {
-    green: {
-      border:
-        "border-emerald-400/10",
-      bg:
-        "bg-emerald-500/[0.025]",
-      icon:
-        "text-emerald-400",
-      hover:
-        "group-hover:border-emerald-400/25 group-hover:bg-emerald-500/[0.04]",
-    },
-
-    red: {
-      border:
-        "border-red-400/10",
-      bg:
-        "bg-red-500/[0.025]",
-      icon:
-        "text-red-400",
-      hover:
-        "group-hover:border-red-400/25 group-hover:bg-red-500/[0.04]",
-    },
-
-    blue: {
-      border:
-        "border-blue-400/10",
-      bg:
-        "bg-blue-500/[0.025]",
-      icon:
-        "text-blue-400",
-      hover:
-        "group-hover:border-blue-400/25 group-hover:bg-blue-500/[0.04]",
-    },
-
-    default: {
-      border:
-        "border-white/10",
-      bg:
-        "bg-white/[0.04]",
-      icon:
-        "text-white/40",
-      hover:
-        "group-hover:border-white/20 group-hover:bg-white/[0.06]",
-    },
+    blue:
+      "bg-blue-400/10 text-blue-400",
+    purple:
+      "bg-purple-400/10 text-purple-400",
+    orange:
+      "bg-orange-400/10 text-orange-400",
+    red:
+      "bg-red-400/10 text-red-400",
+    teal:
+      "bg-teal-400/10 text-teal-400",
+    violet:
+      "bg-violet-400/10 text-violet-400",
   };
 
-  const current =
-    colors[color] ||
-    colors.default;
-
   return (
-    <div
-      className={`rounded-3xl border ${current.border} ${current.bg} p-5 shadow-xl shadow-black/10 backdrop-blur-2xl transition ${current.hover}`}
-    >
-
-      <div className="mb-4 flex items-center justify-between">
-
-        <span className={current.icon}>
-          {icon}
-        </span>
-
-        <ArrowUpRight
-          size={16}
-          className={`text-white/20 transition group-hover:${current.icon}`}
-        />
-
+    <div className="flex flex-col items-center justify-center py-10 text-center">
+      <div
+        className={`flex h-12 w-12 items-center justify-center rounded-2xl ${
+          colors[accent] ||
+          colors.blue
+        }`}
+      >
+        <Icon size={20} />
       </div>
 
-      <p className="text-sm text-white/40">
+      <p className="mt-3 text-sm font-medium text-white/60">
         {title}
       </p>
 
-      <p className={`mt-1 text-2xl font-bold ${
-        color === "green"
-          ? "text-emerald-400"
-          : color === "red"
-          ? "text-red-400"
-          : color === "blue"
-          ? "text-blue-400"
-          : "text-white"
-      }`}>
-        {value}
+      <p className="mt-1 max-w-xs text-[11px] leading-5 text-white/25">
+        {text}
       </p>
-
     </div>
   );
 }
 
-// ===========================================================
-// PROGRESS BAR
-// ===========================================================
+/*
+|--------------------------------------------------------------------------
+| Date Parser
+|--------------------------------------------------------------------------
+*/
 
-function ProgressBar({
-  percentage,
-  color = "green",
-}) {
-  const barColor = {
-    green:
-      "bg-emerald-400",
-    red:
-      "bg-red-400",
-    blue:
-      "bg-blue-400",
-  };
+function parseDate(value) {
+  if (!value) return null;
 
-  return (
-    <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+  if (
+    value &&
+    typeof value.toDate === "function"
+  ) {
+    return value.toDate();
+  }
 
-      <div
-        className={`h-full rounded-full transition-all duration-500 ${
-          barColor[color] ||
-          barColor.green
-        }`}
-        style={{
-          width: `${percentage}%`,
-        }}
-      />
+  if (
+    value &&
+    typeof value.seconds === "number"
+  ) {
+    return new Date(
+      value.seconds * 1000
+    );
+  }
 
-    </div>
-  );
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date;
 }
 
-// ===========================================================
-// EMPTY STATE
-// ===========================================================
+/*
+|--------------------------------------------------------------------------
+| Date Formatter
+|--------------------------------------------------------------------------
+*/
 
-function EmptyState({
-  text,
-}) {
-  return (
-    <div className="py-8 text-center text-sm text-white/30">
-      {text}
-    </div>
+function formatDate(date) {
+  if (!date) return "No date";
+
+  return date.toLocaleDateString(
+    "en-US",
+    {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }
   );
 }

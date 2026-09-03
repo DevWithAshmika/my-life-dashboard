@@ -5,13 +5,14 @@ import {
   CalendarDays,
   AlertCircle,
   Wallet,
+  Target,
+  Repeat,
 } from "lucide-react";
 
 export default function NotificationSystem({
   data,
 }) {
   const notifications = useMemo(() => {
-
     if (!data) {
       return [];
     }
@@ -30,7 +31,6 @@ export default function NotificationSystem({
     const tasks = data.tasks || [];
 
     tasks.forEach((task) => {
-
       const completed =
         task.completed === true ||
         task.status === "completed" ||
@@ -45,8 +45,6 @@ export default function NotificationSystem({
         task.name ||
         "Untitled task";
 
-      // Overdue
-
       if (
         taskDate &&
         taskDate < todayString &&
@@ -57,12 +55,11 @@ export default function NotificationSystem({
           type: "overdue",
           icon: AlertCircle,
           title: "Overdue task",
-          message: `${title} is overdue.`,
+          message:
+            `${title} is overdue.`,
           date: taskDate,
         });
       }
-
-      // Today
 
       if (
         taskDate === todayString &&
@@ -73,10 +70,92 @@ export default function NotificationSystem({
           type: "task",
           icon: CheckSquare,
           title: "Task due today",
-          message: `${title} is scheduled for today.`,
+          message:
+            `${title} is scheduled for today.`,
           date: todayString,
         });
       }
+    });
+
+    // =======================================================
+    // GOALS
+    // =======================================================
+
+    const goals = data.goals || [];
+
+    goals.forEach((goal) => {
+      const target =
+        Number(
+          goal.targetAmount || 0
+        );
+
+      const current =
+        Number(
+          goal.currentAmount || 0
+        );
+
+      const completed =
+        target > 0 &&
+        current >= target;
+
+      if (!goal.deadline || completed) {
+        return;
+      }
+
+      if (
+        goal.deadline <
+        todayString
+      ) {
+        result.push({
+          id: `overdue-goal-${goal.id}`,
+          type: "overdue",
+          icon: AlertCircle,
+          title: "Goal overdue",
+          message:
+            `${goal.title || "Goal"} has passed its deadline.`,
+          date: goal.deadline,
+        });
+      }
+
+      if (
+        goal.deadline ===
+        todayString
+      ) {
+        result.push({
+          id: `today-goal-${goal.id}`,
+          type: "goal",
+          icon: Target,
+          title: "Goal deadline today",
+          message:
+            `${goal.title || "Goal"} reaches its deadline today.`,
+          date: goal.deadline,
+        });
+      }
+    });
+
+    // =======================================================
+    // HABITS
+    // =======================================================
+
+    const habits = data.habits || [];
+
+    habits.forEach((habit) => {
+      const completed =
+        habit.completedToday === true;
+
+      if (completed) {
+        return;
+      }
+
+      result.push({
+        id: `habit-${habit.id}`,
+        type: "habit",
+        icon: Repeat,
+        title: "Habit reminder",
+        message:
+          `${habit.name || "Habit"} is waiting for today.`,
+        date: todayString,
+      });
     });
 
     // =======================================================
@@ -87,9 +166,16 @@ export default function NotificationSystem({
       data.calendar || [];
 
     calendar.forEach((event) => {
+      if (
+        event.date !==
+        todayString
+      ) {
+        return;
+      }
 
       if (
-        event.date !== todayString
+        event.status ===
+        "cancelled"
       ) {
         return;
       }
@@ -117,45 +203,50 @@ export default function NotificationSystem({
       data.finance || [];
 
     finance.forEach((item) => {
-
       if (
-        item.date !== todayString
+        item.date !==
+        todayString
       ) {
         return;
       }
 
-      const amount = Number(
-        item.amount || 0
-      );
+      const amount =
+        Number(
+          item.amount || 0
+        );
 
       if (amount <= 0) {
         return;
       }
 
-      if (item.type === "income") {
-
+      if (
+        item.type ===
+        "income"
+      ) {
         result.push({
           id: `income-${item.id}`,
           type: "income",
           icon: Wallet,
           title: "Income recorded",
-          message: `Rs. ${amount.toLocaleString()} income was added today.`,
+          message:
+            `Rs. ${amount.toLocaleString()} income was added today.`,
           date: todayString,
         });
-
       }
 
-      if (item.type === "expense") {
-
+      if (
+        item.type ===
+        "expense"
+      ) {
         result.push({
           id: `expense-${item.id}`,
           type: "expense",
           icon: Wallet,
           title: "Expense recorded",
-          message: `Rs. ${amount.toLocaleString()} expense was recorded today.`,
+          message:
+            `Rs. ${amount.toLocaleString()} expense was recorded today.`,
           date: todayString,
         });
-
       }
     });
 
@@ -163,25 +254,25 @@ export default function NotificationSystem({
     // SORT
     // =======================================================
 
-    return result.sort((a, b) => {
+    return result.sort(
+      (a, b) => {
+        if (
+          a.type === "overdue" &&
+          b.type !== "overdue"
+        ) {
+          return -1;
+        }
 
-      if (
-        a.type === "overdue" &&
-        b.type !== "overdue"
-      ) {
-        return -1;
+        if (
+          b.type === "overdue" &&
+          a.type !== "overdue"
+        ) {
+          return 1;
+        }
+
+        return 0;
       }
-
-      if (
-        b.type === "overdue" &&
-        a.type !== "overdue"
-      ) {
-        return 1;
-      }
-
-      return 0;
-    });
-
+    );
   }, [data]);
 
   return notifications;

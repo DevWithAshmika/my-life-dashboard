@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 
 import { onAuthStateChanged } from "firebase/auth";
+import { Network } from "@capacitor/network";
 
 import { auth } from "./firebase/config";
 
 import Sidebar from "./components/Sidebar";
 import MobileNav from "./components/MobileNav";
+import Header from "./components/Header";
 
 import Dashboard from "./pages/Dashboard";
 import Finance from "./pages/Finance";
@@ -18,333 +20,648 @@ import Travel from "./pages/Travel";
 import Notes from "./pages/Notes";
 import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
-
 import Login from "./pages/Login";
 
+import {
+  requestNotificationPermission,
+} from "./utils/notifications";
+
 export default function App() {
-  // =========================================================
-  // USER
-  // =========================================================
+  /* =========================
+     AUTH
+  ========================= */
 
   const [user, setUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const [authLoading, setAuthLoading] =
+    useState(true);
 
-  // =========================================================
-  // ACTIVE PAGE
-  // =========================================================
+  /* =========================
+     NAVIGATION
+  ========================= */
 
-  const [activePage, setActivePage] = useState("dashboard");
+  const [activePage, setActivePage] =
+    useState("dashboard");
 
-  // =========================================================
-  // MOBILE MENU
-  // =========================================================
+  const [mobileOpen, setMobileOpen] =
+    useState(false);
 
-  const [mobileOpen, setMobileOpen] = useState(false);
+  /* =========================
+     THEME
+  ========================= */
 
-  // =========================================================
-  // THEME
-  // =========================================================
+  const [darkMode, setDarkMode] =
+    useState(() => {
+      const savedTheme =
+        localStorage.getItem(
+          "my-life-dashboard-theme"
+        );
 
-  const [darkMode, setDarkMode] = useState(() => {
-    const savedTheme = localStorage.getItem(
-      "my-life-dashboard-theme"
+      return savedTheme !== "light";
+    });
+
+  /* =========================
+     ACCENT COLOR
+  ========================= */
+
+  const [accentColor, setAccentColor] =
+    useState(() => {
+      return (
+        localStorage.getItem(
+          "my-life-dashboard-color"
+        ) || "emerald"
+      );
+    });
+
+  /* =========================
+     NETWORK
+  ========================= */
+
+  const [isOnline, setIsOnline] =
+    useState(
+      typeof navigator !== "undefined"
+        ? navigator.onLine
+        : true
     );
 
-    return savedTheme !== "light";
-  });
+  const [
+    showBackOnline,
+    setShowBackOnline,
+  ] = useState(false);
 
-  // =========================================================
-  // DASHBOARD COLOR SYSTEM
-  //
-  // green | red | blue
-  // =========================================================
-
-  const [accentColor, setAccentColor] = useState(() => {
-    const savedColor = localStorage.getItem(
-      "my-life-dashboard-color"
-    );
-
-    if (
-      savedColor === "green" ||
-      savedColor === "red" ||
-      savedColor === "blue"
-    ) {
-      return savedColor;
-    }
-
-    return "green";
-  });
-
-  // =========================================================
-  // APPLY THEME
-  // =========================================================
+  /* =========================
+     FIREBASE AUTH
+  ========================= */
 
   useEffect(() => {
-    const root = document.documentElement;
+    const unsubscribe =
+      onAuthStateChanged(
+        auth,
+        (currentUser) => {
+          setUser(currentUser);
+          setAuthLoading(false);
+        },
+        (error) => {
+          console.error(
+            "Auth state error:",
+            error
+          );
 
-    if (darkMode) {
-      root.classList.add("dark");
-      root.classList.remove("light");
-
-      document.body.classList.add("dark");
-      document.body.classList.remove("light");
-
-      localStorage.setItem(
-        "my-life-dashboard-theme",
-        "dark"
+          setAuthLoading(false);
+        }
       );
-    } else {
-      root.classList.add("light");
-      root.classList.remove("dark");
 
-      document.body.classList.add("light");
-      document.body.classList.remove("dark");
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
-      localStorage.setItem(
-        "my-life-dashboard-theme",
-        "light"
+  /* =========================
+     NETWORK LISTENER
+  ========================= */
+
+  useEffect(() => {
+    let networkListener = null;
+    let backOnlineTimer = null;
+
+    const setupNetworkListener =
+      async () => {
+        try {
+          const status =
+            await Network.getStatus();
+
+          setIsOnline(
+            status.connected
+          );
+
+          networkListener =
+            await Network.addListener(
+              "networkStatusChange",
+              (status) => {
+                setIsOnline(
+                  (previousOnline) => {
+                    if (
+                      !previousOnline &&
+                      status.connected
+                    ) {
+                      setShowBackOnline(
+                        true
+                      );
+
+                      clearTimeout(
+                        backOnlineTimer
+                      );
+
+                      backOnlineTimer =
+                        setTimeout(() => {
+                          setShowBackOnline(
+                            false
+                          );
+                        }, 3000);
+                    }
+
+                    return status.connected;
+                  }
+                );
+              }
+            );
+        } catch (error) {
+          console.error(
+            "Network listener error:",
+            error
+          );
+        }
+      };
+
+    setupNetworkListener();
+
+    /* Browser fallback */
+
+    const handleOnline = () => {
+      setIsOnline(
+        (previousOnline) => {
+          if (!previousOnline) {
+            setShowBackOnline(true);
+
+            clearTimeout(
+              backOnlineTimer
+            );
+
+            backOnlineTimer =
+              setTimeout(() => {
+                setShowBackOnline(false);
+              }, 3000);
+          }
+
+          return true;
+        }
       );
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+
+    window.addEventListener(
+      "online",
+      handleOnline
+    );
+
+    window.addEventListener(
+      "offline",
+      handleOffline
+    );
+
+    return () => {
+      clearTimeout(
+        backOnlineTimer
+      );
+
+      if (networkListener) {
+        networkListener.remove();
+      }
+
+      window.removeEventListener(
+        "online",
+        handleOnline
+      );
+
+      window.removeEventListener(
+        "offline",
+        handleOffline
+      );
+    };
+  }, []);
+
+  /* =========================
+     NOTIFICATIONS
+  ========================= */
+
+  useEffect(() => {
+    const setupNotifications =
+      async () => {
+        try {
+          const granted =
+            await requestNotificationPermission();
+
+          if (granted) {
+            console.log(
+              "🔔 Notification permission granted"
+            );
+          } else {
+            console.log(
+              "🔕 Notification permission denied"
+            );
+          }
+        } catch (error) {
+          console.error(
+            "Notification setup error:",
+            error
+          );
+        }
+      };
+
+    if (user) {
+      setupNotifications();
     }
+  }, [user]);
+
+  /* =========================
+     DARK MODE
+  ========================= */
+
+  useEffect(() => {
+    localStorage.setItem(
+      "my-life-dashboard-theme",
+      darkMode
+        ? "dark"
+        : "light"
+    );
+
+    document.documentElement.classList.toggle(
+      "dark",
+      darkMode
+    );
   }, [darkMode]);
 
-  // =========================================================
-  // APPLY DASHBOARD COLOR
-  // =========================================================
+  /* =========================
+     ACCENT COLOR SAVE
+  ========================= */
 
   useEffect(() => {
-    const root = document.documentElement;
-
-    root.setAttribute(
-      "data-dashboard-color",
-      accentColor
-    );
-
     localStorage.setItem(
       "my-life-dashboard-color",
       accentColor
     );
   }, [accentColor]);
 
-  // =========================================================
-  // FIREBASE AUTH
-  // =========================================================
+  /* =========================
+     PAGE CHANGE
+  ========================= */
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(
-      auth,
-      (currentUser) => {
-        setUser(currentUser);
-        setAuthLoading(false);
-
-        if (!currentUser) {
-          setActivePage("dashboard");
-          setMobileOpen(false);
-        }
-      }
-    );
-
-    return () => unsubscribe();
-  }, []);
-
-  // =========================================================
-  // PAGE CHANGE
-  // =========================================================
-
-  const handlePageChange = (page) => {
+  const handlePageChange = (
+    page
+  ) => {
     setActivePage(page);
+
+    /* Close mobile sidebar */
     setMobileOpen(false);
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   };
 
-  // =========================================================
-  // AUTH LOADING
-  // =========================================================
+  /* =========================
+     AUTH LOADING
+  ========================= */
 
   if (authLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-black text-white">
-        <div className="text-center">
+        <div className="flex flex-col items-center gap-4">
+          <div
+            className="
+              h-10
+              w-10
+              animate-spin
+              rounded-full
+              border-2
+              border-white/20
+              border-t-white
+            "
+          />
 
-          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-white" />
-
-          <p className="text-sm text-white/40">
-            Checking authentication...
+          <p className="text-sm text-white/50">
+            Loading My Dashboard...
           </p>
-
         </div>
       </div>
     );
   }
 
-  // =========================================================
-  // LOGIN
-  // =========================================================
+  /* =========================
+     LOGIN
+  ========================= */
 
   if (!user) {
     return <Login />;
   }
 
-  // =========================================================
-  // APP
-  // =========================================================
+  /* =========================
+     PAGE RENDER
+  ========================= */
+
+  const renderPage = () => {
+    switch (activePage) {
+      /* =====================
+         DASHBOARD
+      ===================== */
+
+      case "dashboard":
+        return (
+          <Dashboard
+            user={user}
+            setActivePage={
+              handlePageChange
+            }
+            darkMode={darkMode}
+            accentColor={accentColor}
+          />
+        );
+
+      /* =====================
+         FINANCE
+      ===================== */
+
+      case "finance":
+        return (
+          <Finance
+            user={user}
+            darkMode={darkMode}
+            accentColor={accentColor}
+          />
+        );
+
+      /* =====================
+         TASKS
+      ===================== */
+
+      case "tasks":
+        return (
+          <Tasks
+            user={user}
+            darkMode={darkMode}
+            accentColor={accentColor}
+          />
+        );
+
+      /* =====================
+         GOALS
+      ===================== */
+
+      case "goals":
+        return (
+          <Goals
+            user={user}
+            darkMode={darkMode}
+            accentColor={accentColor}
+          />
+        );
+
+      /* =====================
+         HABITS
+      ===================== */
+
+      case "habits":
+        return (
+          <Habits
+            user={user}
+            darkMode={darkMode}
+            accentColor={accentColor}
+          />
+        );
+
+      /* =====================
+         FITNESS
+      ===================== */
+
+      case "fitness":
+        return (
+          <Fitness
+            user={user}
+            darkMode={darkMode}
+            accentColor={accentColor}
+          />
+        );
+
+      /* =====================
+         CALENDAR
+      ===================== */
+
+      case "calendar":
+        return (
+          <Calendar
+            user={user}
+            darkMode={darkMode}
+            accentColor={accentColor}
+          />
+        );
+
+      /* =====================
+         TRAVEL
+      ===================== */
+
+      case "travel":
+        return (
+          <Travel
+            user={user}
+            darkMode={darkMode}
+            accentColor={accentColor}
+          />
+        );
+
+      /* =====================
+         NOTES
+      ===================== */
+
+      case "notes":
+        return (
+          <Notes
+            user={user}
+            darkMode={darkMode}
+            accentColor={accentColor}
+          />
+        );
+
+      /* =====================
+         ANALYTICS
+      ===================== */
+
+      case "analytics":
+        return (
+          <Analytics
+            user={user}
+            darkMode={darkMode}
+            accentColor={accentColor}
+          />
+        );
+
+      /* =====================
+         SETTINGS
+      ===================== */
+
+      case "settings":
+        return (
+          <Settings
+            user={user}
+            darkMode={darkMode}
+            setDarkMode={
+              setDarkMode
+            }
+            accentColor={
+              accentColor
+            }
+            setAccentColor={
+              setAccentColor
+            }
+          />
+        );
+
+      /* =====================
+         DEFAULT
+      ===================== */
+
+      default:
+        return (
+          <Dashboard
+            user={user}
+            setActivePage={
+              handlePageChange
+            }
+            darkMode={darkMode}
+            accentColor={accentColor}
+          />
+        );
+    }
+  };
+
+  /* =========================
+     MAIN APP
+  ========================= */
 
   return (
     <div
-      className={`min-h-screen transition-colors duration-300 ${
+      className={
         darkMode
-          ? "bg-black text-white"
-          : "bg-[#f5f5f7] text-black"
-      }`}
+          ? "min-h-screen bg-[#050505] text-white"
+          : "min-h-screen bg-slate-50 text-slate-900"
+      }
     >
-
-      {/* =====================================================
-          SIDEBAR
-      ====================================================== */}
+      {/* =====================
+          DESKTOP + MOBILE SIDEBAR
+      ===================== */}
 
       <Sidebar
         activePage={activePage}
-        setActivePage={handlePageChange}
+        setActivePage={
+          handlePageChange
+        }
         user={user}
         mobileOpen={mobileOpen}
-        setMobileOpen={setMobileOpen}
-        darkMode={darkMode}
-        accentColor={accentColor}
+        setMobileOpen={
+          setMobileOpen
+        }
       />
 
-      {/* =====================================================
-          MAIN
-      ====================================================== */}
+      {/* =====================
+          MAIN CONTENT
+      ===================== */}
 
-      <main
-        className={`min-h-screen transition-colors duration-300 lg:pl-64 ${
-          darkMode
-            ? "bg-black"
-            : "bg-[#f5f5f7]"
-        }`}
-      >
+      <main className="min-h-screen lg:pl-64">
 
-        <div className="mx-auto w-full max-w-[1800px] px-4 pb-24 pt-4 sm:px-6 lg:px-8 lg:pb-8">
+        {/* =====================
+            HEADER
+        ===================== */}
 
-          {/* =================================================
-              MOBILE NAV
-          ================================================= */}
+        <Header
+          user={user}
+          onMenuClick={() =>
+            setMobileOpen(true)
+          }
+        />
 
-          <div className="mb-5 lg:hidden">
+        {/* =====================
+            OFFLINE MESSAGE
+        ===================== */}
 
-            <MobileNav
-              user={user}
-              activePage={activePage}
-              setActivePage={handlePageChange}
-              onMenuClick={() =>
-                setMobileOpen(true)
-              }
-              darkMode={darkMode}
-              accentColor={accentColor}
-            />
-
+        {!isOnline && (
+          <div className="sticky top-16 z-20 px-4 sm:px-6">
+            <div className="mx-auto mt-2 max-w-7xl">
+              <div
+                className="
+                  rounded-2xl
+                  border
+                  border-amber-400/20
+                  bg-amber-400/10
+                  px-4
+                  py-3
+                  text-center
+                  text-sm
+                  text-amber-200
+                "
+              >
+                You are offline. Your saved
+                data will remain available
+                and changes will sync when
+                you are back online.
+              </div>
+            </div>
           </div>
+        )}
 
-          {/* =================================================
-              DASHBOARD
-          ================================================= */}
+        {/* =====================
+            BACK ONLINE
+        ===================== */}
 
-          {activePage === "dashboard" && (
-            <Dashboard
-              user={user}
-              setActivePage={handlePageChange}
-              accentColor={accentColor}
-            />
-          )}
+        {showBackOnline && (
+          <div
+            className="
+              fixed
+              left-1/2
+              top-5
+              z-[11000]
+              -translate-x-1/2
+            "
+          >
+            <div
+              className="
+                rounded-full
+                border
+                border-emerald-400/20
+                bg-emerald-500/15
+                px-5
+                py-2.5
+                text-sm
+                font-medium
+                text-emerald-300
+                shadow-2xl
+              "
+            >
+              ✓ Back online. Syncing your
+              data...
+            </div>
+          </div>
+        )}
 
-          {/* =================================================
-              FINANCE
-          ================================================= */}
+        {/* =====================
+            PAGE CONTAINER
+        ===================== */}
 
-          {activePage === "finance" && (
-            <Finance user={user} />
-          )}
-
-          {/* =================================================
-              TASKS
-          ================================================= */}
-
-          {activePage === "tasks" && (
-            <Tasks user={user} />
-          )}
-
-          {/* =================================================
-              GOALS
-          ================================================= */}
-
-          {activePage === "goals" && (
-            <Goals user={user} />
-          )}
-
-          {/* =================================================
-              HABITS
-          ================================================= */}
-
-          {activePage === "habits" && (
-            <Habits user={user} />
-          )}
-
-          {/* =================================================
-              FITNESS
-          ================================================= */}
-
-          {activePage === "fitness" && (
-            <Fitness user={user} />
-          )}
-
-          {/* =================================================
-              CALENDAR
-          ================================================= */}
-
-          {activePage === "calendar" && (
-            <Calendar user={user} />
-          )}
-
-          {/* =================================================
-              TRAVEL
-          ================================================= */}
-
-          {activePage === "travel" && (
-            <Travel user={user} />
-          )}
-
-          {/* =================================================
-              NOTES
-          ================================================= */}
-
-          {activePage === "notes" && (
-            <Notes user={user} />
-          )}
-
-          {/* =================================================
-              ANALYTICS
-          ================================================= */}
-
-          {activePage === "analytics" && (
-            <Analytics user={user} />
-          )}
-
-          {/* =================================================
-              SETTINGS
-          ================================================= */}
-
-          {activePage === "settings" && (
-            <Settings
-              user={user}
-              darkMode={darkMode}
-              setDarkMode={setDarkMode}
-              accentColor={accentColor}
-              setAccentColor={setAccentColor}
-            />
-          )}
-
+        <div
+          className="
+            px-4
+            pb-24
+            sm:px-6
+            lg:px-8
+          "
+        >
+          <div className="mx-auto max-w-7xl">
+            {renderPage()}
+          </div>
         </div>
-
       </main>
 
+      {/* =====================
+          MOBILE BOTTOM NAV
+      ===================== */}
+
+      <MobileNav
+        activePage={activePage}
+        setActivePage={
+          handlePageChange
+        }
+      />
     </div>
   );
 }

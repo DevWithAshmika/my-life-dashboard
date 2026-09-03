@@ -8,7 +8,6 @@ import {
 import { db } from "../firebase/config";
 
 import NotificationBell from "./NotificationBell";
-
 import NotificationSystem from "./NotificationSystem";
 
 export default function AppNotifications({
@@ -17,11 +16,12 @@ export default function AppNotifications({
   const [data, setData] = useState({
     finance: [],
     tasks: [],
+    goals: [],
+    habits: [],
     calendar: [],
   });
 
   useEffect(() => {
-
     if (!user?.uid) {
       return;
     }
@@ -29,13 +29,14 @@ export default function AppNotifications({
     const collectionNames = [
       "finance",
       "tasks",
+      "goals",
+      "habits",
       "calendar",
     ];
 
     const unsubscribers =
       collectionNames.map(
         (collectionName) => {
-
           const reference =
             collection(
               db,
@@ -47,22 +48,19 @@ export default function AppNotifications({
           return onSnapshot(
             reference,
             (snapshot) => {
-
               const items =
                 snapshot.docs.map(
-                  (doc) => ({
-                    id: doc.id,
-                    ...doc.data(),
+                  (item) => ({
+                    id: item.id,
+                    ...item.data(),
                   })
                 );
 
-              setData(
-                (previous) => ({
-                  ...previous,
-                  [collectionName]:
-                    items,
-                })
-              );
+              setData((previous) => ({
+                ...previous,
+                [collectionName]:
+                  items,
+              }));
             },
             (error) => {
               console.error(
@@ -80,7 +78,6 @@ export default function AppNotifications({
           unsubscribe()
       );
     };
-
   }, [user?.uid]);
 
   const notifications =
@@ -90,9 +87,7 @@ export default function AppNotifications({
 
   return (
     <NotificationBell
-      notifications={
-        notifications
-      }
+      notifications={notifications}
     />
   );
 }

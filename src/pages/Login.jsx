@@ -6,8 +6,15 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
+import { Capacitor } from "@capacitor/core";
+
+import {
+  FirebaseAuthentication,
+} from "@capacitor-firebase/authentication";
+
 import {
   GoogleAuthProvider,
+  signInWithCredential,
   signInWithPopup,
 } from "firebase/auth";
 
@@ -22,6 +29,34 @@ export default function Login() {
       setLoading(true);
       setError("");
 
+      // Android / iOS
+      // Use native Google Sign-In
+      if (Capacitor.isNativePlatform()) {
+        const result =
+          await FirebaseAuthentication.signInWithGoogle();
+
+        const idToken =
+          result?.credential?.idToken;
+
+        if (!idToken) {
+          throw new Error(
+            "Google did not return an ID token."
+          );
+        }
+
+        const credential =
+          GoogleAuthProvider.credential(idToken);
+
+        await signInWithCredential(
+          auth,
+          credential
+        );
+
+        return;
+      }
+
+      // Web browser
+      // Keep Firebase popup login for normal web
       const provider =
         new GoogleAuthProvider();
 
@@ -33,33 +68,36 @@ export default function Login() {
         auth,
         provider
       );
-
-      // App.jsx auth listener automatically
-      // detects the logged-in user.
     } catch (error) {
       console.error(
         "Google login error:",
         error
       );
 
-      if (
-        error.code ===
-        "auth/popup-closed-by-user"
-      ) {
-        setError(
-          "Login window was closed."
-        );
-      } else if (
-        error.code ===
-        "auth/popup-blocked"
-      ) {
-        setError(
-          "Your browser blocked the login popup."
-        );
-      } else {
-        setError(
-          "Unable to login with Google. Please try again."
-        );
+      switch (error?.code) {
+        case "auth/popup-closed-by-user":
+          setError(
+            "Login window was closed."
+          );
+          break;
+
+        case "auth/popup-blocked":
+          setError(
+            "Your browser blocked the login popup."
+          );
+          break;
+
+        case "auth/network-request-failed":
+          setError(
+            "Network error. Please check your internet connection."
+          );
+          break;
+
+        default:
+          setError(
+            error?.message ||
+              "Unable to login with Google. Please try again."
+          );
       }
     } finally {
       setLoading(false);
@@ -68,45 +106,28 @@ export default function Login() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-black px-4 text-white">
-
-      {/* Background */}
-
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
-
         <div className="absolute left-1/2 top-1/4 h-72 w-72 -translate-x-1/2 rounded-full bg-white/[0.04] blur-3xl" />
 
         <div className="absolute bottom-0 left-0 h-64 w-64 rounded-full bg-white/[0.025] blur-3xl" />
-
       </div>
 
-      {/* Login Card */}
-
       <div className="relative w-full max-w-md">
-
         <div className="rounded-[32px] border border-white/10 bg-white/[0.045] p-6 shadow-2xl backdrop-blur-2xl sm:p-8">
 
-          {/* Logo */}
-
           <div className="mb-8 flex justify-center">
-
             <div className="flex h-16 w-16 items-center justify-center rounded-3xl border border-white/10 bg-white/10 shadow-xl">
-
               <LogIn size={28} />
-
             </div>
-
           </div>
 
-          {/* Heading */}
-
           <div className="text-center">
-
             <p className="mb-2 text-sm text-white/40">
               Welcome back
             </p>
 
             <h1 className="text-3xl font-bold tracking-tight">
-              My Life Dashboard
+              My Dashboard
             </h1>
 
             <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-white/35">
@@ -114,10 +135,7 @@ export default function Login() {
               habits, fitness, travel and daily life
               from one place.
             </p>
-
           </div>
-
-          {/* Error */}
 
           {error && (
             <div className="mt-6 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
@@ -125,14 +143,11 @@ export default function Login() {
             </div>
           )}
 
-          {/* Google Button */}
-
           <button
             onClick={handleGoogleLogin}
             disabled={loading}
             className="mt-8 flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-5 py-4 text-sm font-semibold text-black transition hover:bg-white/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
-
             {loading ? (
               <>
                 <Loader2
@@ -149,34 +164,22 @@ export default function Login() {
                 Continue with Google
               </>
             )}
-
           </button>
 
-          {/* Security */}
-
           <div className="mt-6 flex items-center justify-center gap-2 text-xs text-white/25">
-
             <ShieldCheck size={14} />
 
             Secure authentication with Firebase
-
           </div>
-
         </div>
 
         <p className="mt-5 text-center text-xs text-white/20">
           Your personal dashboard
         </p>
-
       </div>
-
     </div>
   );
 }
-
-// ===========================================================
-// GOOGLE ICON
-// ===========================================================
 
 function GoogleIcon() {
   return (

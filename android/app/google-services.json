@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "1080771407569",
+    "project_id": "mylife-dashboard-9e9da",
+    "storage_bucket": "mylife-dashboard-9e9da.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1080771407569:android:9b417b095fd17d5fecdff0",
+        "android_client_info": {
+          "package_name": "com.ashmika.mydashboard"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1080771407569-sqaqj6kesa4h7790816f2v3i9hhik1ve.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.ashmika.mydashboard",
+            "certificate_hash": "ed5d5d3ff34cd745d5d705abe2a66f45d57b105d"
+          }
+        },
+        {
+          "client_id": "1080771407569-iugua3126377bns2urho8qsbf5ltqlrt.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCTjv8qlvWkOW5IM0bMkGBzs9fifC2F_RQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1080771407569-iugua3126377bns2urho8qsbf5ltqlrt.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

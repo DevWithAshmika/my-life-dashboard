@@ -1,3 +1,6 @@
 git add .
 git commit -m "Update dashboard"
 git push
+
+npm run build
+npx cap sync android

@@ -59,13 +59,13 @@ const CURRENCIES = {
 
 // ===========================================================
 // LOCAL DATE
-// IMPORTANT: Avoid UTC date shifting.
 // ===========================================================
 
 const getToday = () => {
   const now = new Date();
 
   const year = now.getFullYear();
+
   const month = String(
     now.getMonth() + 1
   ).padStart(2, "0");
@@ -190,6 +190,7 @@ export default function Finance({ user }) {
 
   // =========================================================
   // LOAD FINANCE DATA
+  // OFFLINE SAFE
   // =========================================================
 
   useEffect(() => {
@@ -250,12 +251,32 @@ export default function Finance({ user }) {
           error
         );
 
-        setRecords([]);
+        /*
+         * IMPORTANT:
+         *
+         * Do NOT do:
+         *
+         * setRecords([]);
+         *
+         * here.
+         *
+         * When the device is offline, Firestore can
+         * temporarily report a network/cache error.
+         *
+         * Keeping the existing state means already
+         * loaded/cached finance records remain visible.
+         */
+
         setLoading(false);
 
-        alert(
-          "Could not load finance data. Check Firebase permissions."
-        );
+        if (
+          error?.code ===
+          "permission-denied"
+        ) {
+          alert(
+            "You don't have permission to access finance data."
+          );
+        }
       }
     );
 
@@ -264,11 +285,11 @@ export default function Finance({ user }) {
 
   // =========================================================
   // LOAD CURRENCY FROM SETTINGS
+  // OFFLINE SAFE
   // =========================================================
 
   useEffect(() => {
     if (!user?.uid) {
-      setCurrency("LKR");
       return;
     }
 
@@ -298,8 +319,6 @@ export default function Finance({ user }) {
           CURRENCIES[savedCurrency]
         ) {
           setCurrency(savedCurrency);
-        } else {
-          setCurrency("LKR");
         }
       },
       (error) => {
@@ -308,7 +327,14 @@ export default function Finance({ user }) {
           error
         );
 
-        setCurrency("LKR");
+        /*
+         * IMPORTANT:
+         *
+         * Do not force LKR here.
+         *
+         * If offline, keep the currency that
+         * is already displayed.
+         */
       }
     );
 
@@ -454,10 +480,13 @@ export default function Finance({ user }) {
       }
     });
 
-    months.add(getToday().slice(0, 7));
+    months.add(
+      getToday().slice(0, 7)
+    );
 
     return Array.from(months).sort(
-      (a, b) => b.localeCompare(a)
+      (a, b) =>
+        b.localeCompare(a)
     );
   }, [records]);
 
@@ -466,7 +495,10 @@ export default function Finance({ user }) {
   // =========================================================
 
   const formatMonth = (value) => {
-    if (!value || value === "all") {
+    if (
+      !value ||
+      value === "all"
+    ) {
       return "All Months";
     }
 
@@ -579,6 +611,7 @@ export default function Finance({ user }) {
 
   // =========================================================
   // SAVE TRANSACTION
+  // OFFLINE FIRESTORE QUEUE
   // =========================================================
 
   const handleSubmit = async (event) => {
@@ -646,7 +679,10 @@ export default function Finance({ user }) {
         date: form.date,
       };
 
+      // =====================================================
       // UPDATE
+      // =====================================================
+
       if (editingId) {
         const recordRef = doc(
           db,
@@ -658,11 +694,18 @@ export default function Finance({ user }) {
 
         await updateDoc(
           recordRef,
-          financeData
+          {
+            ...financeData,
+            updatedAt:
+              serverTimestamp(),
+          }
         );
       }
 
+      // =====================================================
       // ADD
+      // =====================================================
+
       else {
         await addDoc(financeRef, {
           ...financeData,
@@ -674,14 +717,25 @@ export default function Finance({ user }) {
       setEditingId(null);
       setForm(getDefaultForm());
       setShowForm(false);
+
     } catch (error) {
       console.error(
         "Finance save error:",
         error
       );
 
+      /*
+       * With Firestore persistent local
+       * cache enabled, normal writes can be
+       * queued while offline.
+       *
+       * If this reaches catch, it is a real
+       * write/configuration problem rather than
+       * simply assuming the device is offline.
+       */
+
       alert(
-        "Could not save the transaction. Please check Firebase configuration and rules."
+        "Could not save the transaction. Please try again."
       );
     } finally {
       setSaving(false);
@@ -690,6 +744,7 @@ export default function Finance({ user }) {
 
   // =========================================================
   // DELETE
+  // OFFLINE FIRESTORE QUEUE
   // =========================================================
 
   const handleDelete = async (id) => {
@@ -716,6 +771,7 @@ export default function Finance({ user }) {
       );
 
       await deleteDoc(recordRef);
+
     } catch (error) {
       console.error(
         "Finance delete error:",
@@ -735,6 +791,7 @@ export default function Finance({ user }) {
   const clearFilters = () => {
     setSearch("");
     setTypeFilter("all");
+
     setMonthFilter(
       getToday().slice(0, 7)
     );
@@ -746,7 +803,8 @@ export default function Finance({ user }) {
 
   useEffect(() => {
     if (!showForm) {
-      document.body.style.overflow = "";
+      document.body.style.overflow =
+        "";
       return;
     }
 
@@ -1399,8 +1457,6 @@ export default function Finance({ user }) {
 
       {/* =====================================================
           ADD / EDIT MODAL
-          IMPORTANT:
-          z-[9999] keeps modal above MobileNav.
       ====================================================== */}
 
       {showForm && (
@@ -1419,9 +1475,7 @@ export default function Finance({ user }) {
 
           <div className="flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-white/10 bg-[#111111] shadow-2xl sm:max-h-[90vh] sm:max-w-lg sm:rounded-3xl">
 
-            {/* =================================================
-                MODAL HEADER
-            ================================================== */}
+            {/* MODAL HEADER */}
 
             <div className="flex shrink-0 items-center justify-between border-b border-white/[0.06] p-5 sm:p-6">
 
@@ -1449,9 +1503,7 @@ export default function Finance({ user }) {
 
             </div>
 
-            {/* =================================================
-                FORM SCROLL AREA
-            ================================================== */}
+            {/* FORM */}
 
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6">
 
