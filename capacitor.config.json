@@ -2,9 +2,17 @@
   "appId": "com.ashmika.mydashboard",
   "appName": "My Dashboard",
   "webDir": "dist",
+
   "plugins": {
     "FirebaseAuthentication": {
       "providers": ["google.com"]
+    },
+
+    "SplashScreen": {
+      "launchAutoHide": true,
+      "launchShowDuration": 1500,
+      "backgroundColor": "#0B0B0F",
+      "showSpinner": false
     }
   }
 }

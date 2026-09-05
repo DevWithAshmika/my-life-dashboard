@@ -17,12 +17,13 @@ import {
 } from "lucide-react";
 
 import {
-  addDoc,
   collection,
   deleteDoc,
   doc,
+  getDocsFromCache,
   onSnapshot,
   serverTimestamp,
+  setDoc,
   updateDoc,
 } from "firebase/firestore";
 
@@ -95,6 +96,70 @@ const getDefaultForm = () => ({
 });
 
 // ===========================================================
+// LOCAL BACKUP
+// ===========================================================
+
+function getGoalsBackupKey(uid) {
+  return `my-dashboard-${uid}-goals`;
+}
+
+function loadGoalsBackup(uid) {
+  if (!uid) {
+    return [];
+  }
+
+  try {
+    const raw = localStorage.getItem(
+      getGoalsBackupKey(uid)
+    );
+
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+
+    return Array.isArray(parsed)
+      ? parsed
+      : [];
+  } catch (error) {
+    console.warn(
+      "Goals local backup read error:",
+      error
+    );
+
+    return [];
+  }
+}
+
+function saveGoalsBackup(uid, goals) {
+  if (!uid) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(
+      getGoalsBackupKey(uid),
+      JSON.stringify(goals)
+    );
+  } catch (error) {
+    console.warn(
+      "Goals local backup write error:",
+      error
+    );
+  }
+}
+
+function sortGoals(data) {
+  return [...data].sort((a, b) => {
+    return (
+      getTimestampValue(b.createdAt) -
+      getTimestampValue(a.createdAt)
+    );
+  });
+}
+
+// ===========================================================
 // GOALS
 // ===========================================================
 
@@ -148,7 +213,7 @@ export default function Goals({ user }) {
   };
 
   // =========================================================
-  // FIRESTORE GOALS
+  // FIRESTORE GOALS + OFFLINE CACHE
   // =========================================================
 
   useEffect(() => {
@@ -158,6 +223,9 @@ export default function Goals({ user }) {
       return;
     }
 
+    let active = true;
+    let loadingTimer;
+
     const goalsRef = collection(
       db,
       "users",
@@ -165,24 +233,190 @@ export default function Goals({ user }) {
       "goals"
     );
 
-    const unsubscribe = onSnapshot(
-      goalsRef,
-      (snapshot) => {
-        const data = snapshot.docs.map(
-          (item) => ({
-            id: item.id,
-            ...item.data(),
-          })
+    // -------------------------------------------------------
+    // LOCAL BACKUP
+    // -------------------------------------------------------
+
+    const localBackup =
+      loadGoalsBackup(user.uid);
+
+    // -------------------------------------------------------
+    // APPLY DATA
+    // -------------------------------------------------------
+
+    const applyGoals = (
+      data,
+      allowEmpty = true
+    ) => {
+      if (!active) {
+        return;
+      }
+
+      const sorted = sortGoals(data);
+
+      /*
+       * If Firestore returns an empty cache while offline,
+       * don't erase an existing local backup.
+       */
+      if (
+        sorted.length === 0 &&
+        !allowEmpty &&
+        localBackup.length > 0
+      ) {
+        setGoals(
+          sortGoals(localBackup)
         );
 
-        data.sort((a, b) => {
-          return (
-            getTimestampValue(b.createdAt) -
-            getTimestampValue(a.createdAt)
-          );
-        });
+        setLoading(false);
+        return;
+      }
 
-        setGoals(data);
+      setGoals(sorted);
+
+      /*
+       * Save only useful data to local backup.
+       *
+       * Empty data is saved only when it is allowed to be
+       * authoritative, for example an actual online snapshot.
+       */
+      if (
+        sorted.length > 0 ||
+        allowEmpty
+      ) {
+        saveGoalsBackup(
+          user.uid,
+          sorted
+        );
+      }
+
+      setLoading(false);
+    };
+
+    // -------------------------------------------------------
+    // FIRESTORE CACHE FIRST
+    // -------------------------------------------------------
+
+    const loadCache = async () => {
+      try {
+        const cached =
+          await getDocsFromCache(
+            goalsRef
+          );
+
+        if (!active) {
+          return;
+        }
+
+        const cachedData =
+          cached.docs.map(
+            (item) => ({
+              id: item.id,
+              ...item.data(),
+            })
+          );
+
+        if (cachedData.length > 0) {
+          applyGoals(
+            cachedData,
+            true
+          );
+        } else if (
+          localBackup.length > 0
+        ) {
+          setGoals(
+            sortGoals(localBackup)
+          );
+
+          setLoading(false);
+        }
+      } catch (error) {
+        console.warn(
+          "Goals cache read failed:",
+          error
+        );
+
+        if (
+          localBackup.length > 0
+        ) {
+          setGoals(
+            sortGoals(localBackup)
+          );
+        }
+
+        setLoading(false);
+      }
+    };
+
+    loadCache();
+
+    // -------------------------------------------------------
+    // LIVE FIRESTORE LISTENER
+    // -------------------------------------------------------
+
+    const unsubscribe = onSnapshot(
+      goalsRef,
+      {
+        includeMetadataChanges: true,
+      },
+      (snapshot) => {
+        if (!active) {
+          return;
+        }
+
+        const data =
+          snapshot.docs.map(
+            (item) => ({
+              id: item.id,
+              ...item.data(),
+            })
+          );
+
+        const fromCache =
+          snapshot.metadata
+            ?.fromCache === true;
+
+        /*
+         * When offline Firestore can temporarily return an
+         * empty cache. If localStorage already has goals,
+         * keep those goals visible.
+         */
+        if (
+          data.length === 0 &&
+          fromCache
+        ) {
+          const latestBackup =
+            loadGoalsBackup(
+              user.uid
+            );
+
+          if (
+            latestBackup.length > 0
+          ) {
+            setGoals(
+              sortGoals(
+                latestBackup
+              )
+            );
+
+            setLoading(false);
+            return;
+          }
+        }
+
+        const sorted =
+          sortGoals(data);
+
+        setGoals(sorted);
+
+        /*
+         * An empty online snapshot is valid and should clear
+         * the local backup. A non-empty snapshot is also saved.
+         */
+        saveGoalsBackup(
+          user.uid,
+          sorted
+        );
+
         setLoading(false);
       },
       (error) => {
@@ -191,12 +425,57 @@ export default function Goals({ user }) {
           error
         );
 
-        setGoals([]);
+        if (!active) {
+          return;
+        }
+
+        const fallback =
+          loadGoalsBackup(
+            user.uid
+          );
+
+        if (fallback.length > 0) {
+          setGoals(
+            sortGoals(fallback)
+          );
+        }
+
         setLoading(false);
       }
     );
 
-    return () => unsubscribe();
+    // -------------------------------------------------------
+    // LOADING FALLBACK
+    // -------------------------------------------------------
+
+    loadingTimer = setTimeout(() => {
+      if (!active) {
+        return;
+      }
+
+      const fallback =
+        loadGoalsBackup(
+          user.uid
+        );
+
+      if (fallback.length > 0) {
+        setGoals(
+          sortGoals(fallback)
+        );
+      }
+
+      setLoading(false);
+    }, 4000);
+
+    return () => {
+      active = false;
+
+      clearTimeout(
+        loadingTimer
+      );
+
+      unsubscribe();
+    };
   }, [user?.uid]);
 
   // =========================================================
@@ -219,19 +498,25 @@ export default function Goals({ user }) {
 
     const unsubscribe = onSnapshot(
       settingsRef,
+      {
+        includeMetadataChanges: true,
+      },
       (snapshot) => {
         if (!snapshot.exists()) {
           setCurrency("LKR");
           return;
         }
 
-        const data = snapshot.data();
+        const data =
+          snapshot.data();
 
         if (
           data.currency &&
           CURRENCIES[data.currency]
         ) {
-          setCurrency(data.currency);
+          setCurrency(
+            data.currency
+          );
         } else {
           setCurrency("LKR");
         }
@@ -272,7 +557,9 @@ export default function Goals({ user }) {
         .join(" ")
         .toLowerCase();
 
-      return searchableText.includes(value);
+      return searchableText.includes(
+        value
+      );
     });
   }, [goals, search]);
 
@@ -283,25 +570,37 @@ export default function Goals({ user }) {
   const statistics = useMemo(() => {
     const total = goals.length;
 
-    const completed = goals.filter(
-      (goal) => getProgress(goal) >= 100
-    ).length;
+    const completed =
+      goals.filter(
+        (goal) =>
+          getProgress(goal) >= 100
+      ).length;
 
-    const active = goals.filter(
-      (goal) => getProgress(goal) < 100
-    ).length;
+    const active =
+      goals.filter(
+        (goal) =>
+          getProgress(goal) < 100
+      ).length;
 
-    const target = goals.reduce(
-      (sum, goal) =>
-        sum + Number(goal.targetAmount || 0),
-      0
-    );
+    const target =
+      goals.reduce(
+        (sum, goal) =>
+          sum +
+          Number(
+            goal.targetAmount || 0
+          ),
+        0
+      );
 
-    const saved = goals.reduce(
-      (sum, goal) =>
-        sum + Number(goal.currentAmount || 0),
-      0
-    );
+    const saved =
+      goals.reduce(
+        (sum, goal) =>
+          sum +
+          Number(
+            goal.currentAmount || 0
+          ),
+        0
+      );
 
     return {
       total,
@@ -317,7 +616,10 @@ export default function Goals({ user }) {
   // =========================================================
 
   const resetForm = () => {
-    setForm(getDefaultForm());
+    setForm(
+      getDefaultForm()
+    );
+
     setEditingGoal(null);
   };
 
@@ -339,15 +641,22 @@ export default function Goals({ user }) {
 
     setForm({
       title: goal.title || "",
-      description: goal.description || "",
-      targetAmount: goal.targetAmount ?? "",
-      currentAmount: goal.currentAmount ?? "",
-      deadline: goal.deadline || "",
-      category: goal.category || "Savings",
+      description:
+        goal.description || "",
+      targetAmount:
+        goal.targetAmount ?? "",
+      currentAmount:
+        goal.currentAmount ?? "",
+      deadline:
+        goal.deadline || "",
+      category:
+        goal.category ||
+        "Savings",
       reminderEnabled:
         goal.reminderEnabled === true,
       reminderTime:
-        goal.reminderTime || "09:00",
+        goal.reminderTime ||
+        "09:00",
     });
 
     setShowModal(true);
@@ -391,29 +700,42 @@ export default function Goals({ user }) {
   // SAVE
   // =========================================================
 
-  const handleSubmit = async (event) => {
+  const handleSubmit = async (
+    event
+  ) => {
     event.preventDefault();
 
     if (!user?.uid) {
-      alert("Please login first.");
+      alert(
+        "Please login first."
+      );
       return;
     }
 
-    const title = form.title.trim();
+    const title =
+      form.title.trim();
 
     const targetAmount =
-      Number(form.targetAmount);
+      Number(
+        form.targetAmount
+      );
 
     const currentAmount =
-      Number(form.currentAmount || 0);
+      Number(
+        form.currentAmount || 0
+      );
 
     if (!title) {
-      alert("Please enter a goal name.");
+      alert(
+        "Please enter a goal name."
+      );
       return;
     }
 
     if (
-      !Number.isFinite(targetAmount) ||
+      !Number.isFinite(
+        targetAmount
+      ) ||
       targetAmount <= 0
     ) {
       alert(
@@ -423,7 +745,9 @@ export default function Goals({ user }) {
     }
 
     if (
-      !Number.isFinite(currentAmount) ||
+      !Number.isFinite(
+        currentAmount
+      ) ||
       currentAmount < 0
     ) {
       alert(
@@ -454,11 +778,118 @@ export default function Goals({ user }) {
 
     setSaving(true);
 
-    try {
-      const completed =
-        currentAmount >= targetAmount;
+    // =======================================================
+    // PREPARE LOCAL DATA
+    // =======================================================
 
-      const goalData = {
+    const completed =
+      currentAmount >=
+      targetAmount;
+
+    /*
+     * ISO timestamps are used locally.
+     *
+     * serverTimestamp() must NOT be stored inside
+     * localStorage because it is a Firestore sentinel.
+     */
+    const now =
+      new Date().toISOString();
+
+    const localGoal = {
+      id:
+        editingGoal?.id ||
+        "",
+      title,
+      description:
+        form.description.trim(),
+      targetAmount,
+      currentAmount,
+      deadline:
+        form.deadline || "",
+      category:
+        form.category || "Other",
+      reminderEnabled:
+        form.reminderEnabled &&
+        !completed,
+      reminderTime:
+        form.reminderTime ||
+        "09:00",
+      updatedAt: now,
+      ...(editingGoal
+        ? {}
+        : {
+            createdAt: now,
+          }),
+    };
+
+    const goalsRef = collection(
+      db,
+      "users",
+      user.uid,
+      "goals"
+    );
+
+    // =======================================================
+    // UPDATE
+    // =======================================================
+
+    if (editingGoal) {
+      const goalId =
+        editingGoal.id;
+
+      const updatedGoal = {
+        ...editingGoal,
+        ...localGoal,
+        id: goalId,
+      };
+
+      /*
+       * OPTIMISTIC UI
+       *
+       * Update screen immediately.
+       */
+      setGoals((previous) => {
+        const next =
+          previous.map(
+            (item) =>
+              item.id === goalId
+                ? updatedGoal
+                : item
+          );
+
+        const sorted =
+          sortGoals(next);
+
+        saveGoalsBackup(
+          user.uid,
+          sorted
+        );
+
+        return sorted;
+      });
+
+      /*
+       * Close modal immediately.
+       *
+       * Do not wait for Firebase.
+       */
+      setShowModal(false);
+      resetForm();
+      setSaving(false);
+
+      // -----------------------------------------------------
+      // FIRESTORE SYNC
+      // -----------------------------------------------------
+
+      const goalRef = doc(
+        db,
+        "users",
+        user.uid,
+        "goals",
+        goalId
+      );
+
+      const firestoreData = {
         title,
         description:
           form.description.trim(),
@@ -468,99 +899,189 @@ export default function Goals({ user }) {
           form.deadline || "",
         category:
           form.category || "Other",
-
         reminderEnabled:
-          form.reminderEnabled && !completed,
-
+          form.reminderEnabled &&
+          !completed,
         reminderTime:
-          form.reminderTime || "09:00",
-
+          form.reminderTime ||
+          "09:00",
         updatedAt:
           serverTimestamp(),
       };
 
-      // =====================================================
-      // UPDATE
-      // =====================================================
-
-      if (editingGoal) {
-        const goalRef = doc(
-          db,
-          "users",
-          user.uid,
-          "goals",
-          editingGoal.id
+      /*
+       * Fire-and-forget.
+       *
+       * This works with Firestore's offline queue and
+       * never blocks the UI.
+       */
+      void updateDoc(
+        goalRef,
+        firestoreData
+      ).catch((error) => {
+        console.error(
+          "Goal update sync error:",
+          error
         );
+      });
 
-        await updateDoc(
-          goalRef,
-          goalData
+      // -----------------------------------------------------
+      // NOTIFICATION
+      // -----------------------------------------------------
+
+      void cancelGoalNotification(
+        goalId
+      ).catch((error) => {
+        console.warn(
+          "Goal notification cancel error:",
+          error
         );
+      });
 
-        await cancelGoalNotification(
-          editingGoal.id
-        );
-
-        if (
-          goalData.reminderEnabled &&
-          goalData.deadline
-        ) {
-          await scheduleGoalNotification({
-            id: editingGoal.id,
-            title: goalData.title,
-            deadline: goalData.deadline,
-            reminderTime:
-              goalData.reminderTime,
-          });
-        }
-      }
-
-      // =====================================================
-      // CREATE
-      // =====================================================
-
-      else {
-        const newGoal = await addDoc(
-          collection(
-            db,
-            "users",
-            user.uid,
-            "goals"
-          ),
+      if (
+        localGoal.reminderEnabled &&
+        localGoal.deadline &&
+        localGoal.reminderTime
+      ) {
+        void scheduleGoalNotification(
           {
-            ...goalData,
-            createdAt:
-              serverTimestamp(),
-          }
-        );
-
-        if (
-          goalData.reminderEnabled &&
-          goalData.deadline
-        ) {
-          await scheduleGoalNotification({
-            id: newGoal.id,
-            title: goalData.title,
-            deadline: goalData.deadline,
+            id: goalId,
+            title:
+              localGoal.title,
+            description:
+              localGoal.description,
+            deadline:
+              localGoal.deadline,
             reminderTime:
-              goalData.reminderTime,
-          });
-        }
+              localGoal.reminderTime,
+          }
+        ).catch((error) => {
+          console.warn(
+            "Goal notification schedule error:",
+            error
+          );
+        });
       }
 
-      setShowModal(false);
-      resetForm();
-    } catch (error) {
+      return;
+    }
+
+    // =======================================================
+    // CREATE
+    // =======================================================
+
+    /*
+     * Generate the Firestore document ID locally.
+     *
+     * This means the goal gets an ID immediately even when
+     * there is no internet connection.
+     */
+    const goalRef =
+      doc(goalsRef);
+
+    const goalId =
+      goalRef.id;
+
+    const newLocalGoal = {
+      ...localGoal,
+      id: goalId,
+      createdAt: now,
+    };
+
+    // -------------------------------------------------------
+    // OPTIMISTIC UI
+    // -------------------------------------------------------
+
+    setGoals((previous) => {
+      const next =
+        sortGoals([
+          newLocalGoal,
+          ...previous,
+        ]);
+
+      saveGoalsBackup(
+        user.uid,
+        next
+      );
+
+      return next;
+    });
+
+    /*
+     * Close immediately.
+     */
+    setShowModal(false);
+    resetForm();
+    setSaving(false);
+
+    // -------------------------------------------------------
+    // FIRESTORE SYNC
+    // -------------------------------------------------------
+
+    const firestoreData = {
+      title,
+      description:
+        form.description.trim(),
+      targetAmount,
+      currentAmount,
+      deadline:
+        form.deadline || "",
+      category:
+        form.category || "Other",
+      reminderEnabled:
+        form.reminderEnabled &&
+        !completed,
+      reminderTime:
+        form.reminderTime ||
+        "09:00",
+      createdAt:
+        serverTimestamp(),
+      updatedAt:
+        serverTimestamp(),
+    };
+
+    /*
+     * setDoc queues the write when offline.
+     *
+     * No await here.
+     */
+    void setDoc(
+      goalRef,
+      firestoreData
+    ).catch((error) => {
       console.error(
-        "Saving goal failed:",
+        "Goal create sync error:",
         error
       );
+    });
 
-      alert(
-        "Could not save the goal."
-      );
-    } finally {
-      setSaving(false);
+    // -------------------------------------------------------
+    // NOTIFICATION
+    // -------------------------------------------------------
+
+    if (
+      newLocalGoal.reminderEnabled &&
+      newLocalGoal.deadline &&
+      newLocalGoal.reminderTime
+    ) {
+      void scheduleGoalNotification(
+        {
+          id: goalId,
+          title:
+            newLocalGoal.title,
+          description:
+            newLocalGoal.description,
+          deadline:
+            newLocalGoal.deadline,
+          reminderTime:
+            newLocalGoal.reminderTime,
+        }
+      ).catch((error) => {
+        console.warn(
+          "Goal notification schedule error:",
+          error
+        );
+      });
     }
   };
 
@@ -568,7 +1089,9 @@ export default function Goals({ user }) {
   // DELETE
   // =========================================================
 
-  const handleDelete = async (goal) => {
+  const handleDelete = async (
+    goal
+  ) => {
     if (!user?.uid) {
       return;
     }
@@ -582,30 +1105,57 @@ export default function Goals({ user }) {
       return;
     }
 
-    try {
-      await cancelGoalNotification(
-        goal.id
+    /*
+     * OPTIMISTIC DELETE
+     *
+     * Remove immediately from UI and local backup.
+     */
+    setGoals((previous) => {
+      const next =
+        previous.filter(
+          (item) =>
+            item.id !== goal.id
+        );
+
+      saveGoalsBackup(
+        user.uid,
+        next
       );
 
-      await deleteDoc(
-        doc(
-          db,
-          "users",
-          user.uid,
-          "goals",
-          goal.id
-        )
-      );
-    } catch (error) {
-      console.error(
-        "Delete goal failed:",
+      return next;
+    });
+
+    // -------------------------------------------------------
+    // NOTIFICATION
+    // -------------------------------------------------------
+
+    void cancelGoalNotification(
+      goal.id
+    ).catch((error) => {
+      console.warn(
+        "Goal notification cancel error:",
         error
       );
+    });
 
-      alert(
-        "Could not delete the goal."
+    // -------------------------------------------------------
+    // FIRESTORE
+    // -------------------------------------------------------
+
+    void deleteDoc(
+      doc(
+        db,
+        "users",
+        user.uid,
+        "goals",
+        goal.id
+      )
+    ).catch((error) => {
+      console.error(
+        "Delete goal sync error:",
+        error
       );
-    }
+    });
   };
 
   // =========================================================
@@ -698,7 +1248,9 @@ export default function Goals({ user }) {
         <StatCard
           icon={<Wallet size={20} />}
           title="Total Saved"
-          value={money(statistics.saved)}
+          value={money(
+            statistics.saved
+          )}
           color="green"
         />
 
@@ -718,7 +1270,9 @@ export default function Goals({ user }) {
             placeholder="Search goals..."
             value={search}
             onChange={(event) =>
-              setSearch(event.target.value)
+              setSearch(
+                event.target.value
+              )
             }
             className="w-full rounded-2xl border border-white/10 bg-white/[0.04] py-3 pl-11 pr-4 text-sm text-white outline-none placeholder:text-white/25 transition focus:border-blue-400/40 focus:bg-blue-500/[0.03]"
           />
@@ -738,19 +1292,25 @@ export default function Goals({ user }) {
 
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
 
-          {filteredGoals.map((goal) => (
-            <GoalCard
-              key={goal.id}
-              goal={goal}
-              money={money}
-              onEdit={() =>
-                openEditModal(goal)
-              }
-              onDelete={() =>
-                handleDelete(goal)
-              }
-            />
-          ))}
+          {filteredGoals.map(
+            (goal) => (
+              <GoalCard
+                key={goal.id}
+                goal={goal}
+                money={money}
+                onEdit={() =>
+                  openEditModal(
+                    goal
+                  )
+                }
+                onDelete={() =>
+                  handleDelete(
+                    goal
+                  )
+                }
+              />
+            )
+          )}
 
         </div>
 
@@ -782,16 +1342,21 @@ function GoalCard({
   onEdit,
   onDelete,
 }) {
-  const progress = getProgress(goal);
+  const progress =
+    getProgress(goal);
 
   const completed =
     progress >= 100;
 
   const target =
-    Number(goal.targetAmount || 0);
+    Number(
+      goal.targetAmount || 0
+    );
 
   const current =
-    Number(goal.currentAmount || 0);
+    Number(
+      goal.currentAmount || 0
+    );
 
   const remaining = Math.max(
     target - current,
@@ -799,7 +1364,9 @@ function GoalCard({
   );
 
   const deadlineInfo =
-    getDeadlineInfo(goal.deadline);
+    getDeadlineInfo(
+      goal.deadline
+    );
 
   const isOverdue =
     !completed &&
@@ -860,7 +1427,8 @@ function GoalCard({
             </h3>
 
             <p className="mt-1 text-xs text-white/30">
-              {goal.category || "Other"}
+              {goal.category ||
+                "Other"}
             </p>
 
           </div>
@@ -933,7 +1501,10 @@ function GoalCard({
           className={`h-full rounded-full transition-all duration-500 ${theme.progress}`}
           style={{
             width: `${Math.min(
-              Math.max(progress, 0),
+              Math.max(
+                progress,
+                0
+              ),
               100
             )}%`,
           }}
@@ -948,7 +1519,10 @@ function GoalCard({
         </span>
 
         <span className="text-right text-white/30">
-          {money(remaining)} remaining
+          {money(
+            remaining
+          )}{" "}
+          remaining
         </span>
 
       </div>
@@ -959,14 +1533,19 @@ function GoalCard({
 
           <StatusBadge
             progress={progress}
-            deadlineInfo={deadlineInfo}
+            deadlineInfo={
+              deadlineInfo
+            }
           />
 
           {goal.reminderEnabled &&
             !completed && (
               <div
                 className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400"
-                title={`Reminder ${goal.reminderTime || ""}`}
+                title={`Reminder ${
+                  goal.reminderTime ||
+                  ""
+                }`}
               >
                 <Bell size={14} />
               </div>
@@ -988,7 +1567,9 @@ function GoalCard({
                   : "text-white/50"
               }`}
             >
-              {formatDate(goal.deadline)}
+              {formatDate(
+                goal.deadline
+              )}
             </p>
 
           </div>
@@ -1052,7 +1633,21 @@ function GoalModal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-end justify-center bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="
+        fixed
+        inset-0
+        z-[9999]
+        flex
+        items-end
+        justify-center
+        overflow-hidden
+        bg-black/75
+        p-0
+        pb-[env(safe-area-inset-bottom)]
+        backdrop-blur-sm
+        sm:items-center
+        sm:p-4
+      "
       onMouseDown={(event) => {
         if (
           event.target ===
@@ -1063,7 +1658,23 @@ function GoalModal({
       }}
     >
 
-      <div className="flex max-h-[calc(100dvh-20px)] w-full flex-col overflow-hidden rounded-t-3xl border border-white/10 bg-[#111] shadow-2xl sm:max-h-[90vh] sm:max-w-lg sm:rounded-3xl">
+      <div
+        className="
+          flex
+          max-h-[calc(100dvh-20px)]
+          w-full
+          flex-col
+          overflow-hidden
+          rounded-t-3xl
+          border
+          border-white/10
+          bg-[#111]
+          shadow-2xl
+          sm:max-h-[90vh]
+          sm:max-w-lg
+          sm:rounded-3xl
+        "
+      >
 
         <div className="flex shrink-0 items-center justify-between border-b border-white/[0.06] p-5 sm:p-6">
 
@@ -1094,7 +1705,18 @@ function GoalModal({
 
         </div>
 
-        <div className="overflow-y-auto p-5 sm:p-6">
+        <div
+          className="
+            min-h-0
+            flex-1
+            overflow-y-auto
+            overscroll-contain
+            p-5
+            pb-10
+            sm:p-6
+            sm:pb-6
+          "
+        >
 
           <form
             onSubmit={onSubmit}
@@ -1119,11 +1741,28 @@ function GoalModal({
 
               <textarea
                 name="description"
-                value={form.description}
+                value={
+                  form.description
+                }
                 onChange={onChange}
                 placeholder="What is this goal for?"
                 rows={3}
-                className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/20 transition focus:border-blue-400/40"
+                className="
+                  w-full
+                  resize-none
+                  rounded-2xl
+                  border
+                  border-white/10
+                  bg-white/[0.04]
+                  px-4
+                  py-3
+                  text-sm
+                  text-white
+                  outline-none
+                  placeholder:text-white/20
+                  transition
+                  focus:border-blue-400/40
+                "
               />
 
             </div>
@@ -1136,7 +1775,9 @@ function GoalModal({
                 type="number"
                 min="0"
                 step="0.01"
-                value={form.targetAmount}
+                value={
+                  form.targetAmount
+                }
                 onChange={onChange}
                 placeholder="100000"
                 required
@@ -1149,7 +1790,9 @@ function GoalModal({
                 type="number"
                 min="0"
                 step="0.01"
-                value={form.currentAmount}
+                value={
+                  form.currentAmount
+                }
                 onChange={onChange}
                 placeholder="0"
                 inputMode="decimal"
@@ -1167,15 +1810,36 @@ function GoalModal({
 
                 <select
                   name="category"
-                  value={form.category}
+                  value={
+                    form.category
+                  }
                   onChange={onChange}
-                  className="w-full appearance-none rounded-2xl border border-white/10 bg-[#171717] px-4 py-3 pr-10 text-sm text-white outline-none transition focus:border-blue-400/40"
+                  className="
+                    w-full
+                    appearance-none
+                    rounded-2xl
+                    border
+                    border-white/10
+                    bg-[#171717]
+                    px-4
+                    py-3
+                    pr-10
+                    text-sm
+                    text-white
+                    outline-none
+                    transition
+                    focus:border-blue-400/40
+                  "
                 >
                   {CATEGORIES.map(
                     (category) => (
                       <option
-                        key={category}
-                        value={category}
+                        key={
+                          category
+                        }
+                        value={
+                          category
+                        }
                       >
                         {category}
                       </option>
@@ -1185,7 +1849,14 @@ function GoalModal({
 
                 <ChevronDown
                   size={17}
-                  className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-white/40"
+                  className="
+                    pointer-events-none
+                    absolute
+                    right-4
+                    top-1/2
+                    -translate-y-1/2
+                    text-white/40
+                  "
                 />
 
               </div>
@@ -1201,16 +1872,27 @@ function GoalModal({
               <input
                 type="date"
                 name="deadline"
-                value={form.deadline}
+                value={
+                  form.deadline
+                }
                 onChange={onChange}
-                className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition focus:border-blue-400/40"
+                className="
+                  w-full
+                  rounded-2xl
+                  border
+                  border-white/10
+                  bg-white/[0.04]
+                  px-4
+                  py-3
+                  text-sm
+                  text-white
+                  outline-none
+                  transition
+                  focus:border-blue-400/40
+                "
               />
 
             </div>
-
-            {/* =================================================
-                REMINDER
-            ================================================== */}
 
             <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
 
@@ -1218,15 +1900,18 @@ function GoalModal({
 
                 <div className="flex items-center gap-3">
 
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
+
                     {form.reminderEnabled ? (
                       <Bell size={18} />
                     ) : (
                       <BellOff size={18} />
                     )}
+
                   </div>
 
                   <div>
+
                     <p className="text-sm font-medium">
                       Goal Reminder
                     </p>
@@ -1234,17 +1919,22 @@ function GoalModal({
                     <p className="mt-1 text-xs text-white/30">
                       Remind me about this goal deadline
                     </p>
+
                   </div>
 
                 </div>
 
-                <label className="relative inline-flex cursor-pointer items-center">
+                <label className="relative inline-flex shrink-0 cursor-pointer items-center">
 
                   <input
                     type="checkbox"
                     name="reminderEnabled"
-                    checked={form.reminderEnabled}
-                    onChange={onChange}
+                    checked={
+                      form.reminderEnabled
+                    }
+                    onChange={handleChangeSafe(
+                      onChange
+                    )}
                     className="peer sr-only"
                   />
 
@@ -1266,9 +1956,25 @@ function GoalModal({
                   <input
                     type="time"
                     name="reminderTime"
-                    value={form.reminderTime}
-                    onChange={onChange}
-                    className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none focus:border-blue-400/40"
+                    value={
+                      form.reminderTime
+                    }
+                    onChange={
+                      onChange
+                    }
+                    className="
+                      w-full
+                      rounded-2xl
+                      border
+                      border-white/10
+                      bg-white/[0.04]
+                      px-4
+                      py-3
+                      text-sm
+                      text-white
+                      outline-none
+                      focus:border-blue-400/40
+                    "
                   />
 
                 </div>
@@ -1276,13 +1982,35 @@ function GoalModal({
 
             </div>
 
-            <div className="flex gap-3 pt-3">
+            <div
+              className="
+                flex
+                gap-3
+                pt-3
+                pb-2
+              "
+            >
 
               <button
                 type="button"
                 onClick={onClose}
                 disabled={saving}
-                className="flex-1 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-medium text-white/60 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-40"
+                className="
+                  flex-1
+                  rounded-2xl
+                  border
+                  border-white/10
+                  bg-white/[0.04]
+                  px-4
+                  py-3
+                  text-sm
+                  font-medium
+                  text-white/60
+                  transition
+                  hover:bg-white/[0.08]
+                  hover:text-white
+                  disabled:opacity-40
+                "
               >
                 Cancel
               </button>
@@ -1290,7 +2018,22 @@ function GoalModal({
               <button
                 type="submit"
                 disabled={saving}
-                className="flex-1 rounded-2xl bg-blue-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-50"
+                className="
+                  flex-1
+                  rounded-2xl
+                  bg-blue-500
+                  px-4
+                  py-3
+                  text-sm
+                  font-semibold
+                  text-white
+                  shadow-lg
+                  shadow-blue-500/20
+                  transition
+                  hover:bg-blue-400
+                  disabled:cursor-not-allowed
+                  disabled:opacity-50
+                "
               >
                 {saving
                   ? "Saving..."
@@ -1328,7 +2071,21 @@ function Input({
 
       <input
         {...props}
-        className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none placeholder:text-white/20 transition focus:border-blue-400/40"
+        className="
+          w-full
+          rounded-2xl
+          border
+          border-white/10
+          bg-white/[0.04]
+          px-4
+          py-3
+          text-sm
+          text-white
+          outline-none
+          placeholder:text-white/20
+          transition
+          focus:border-blue-400/40
+        "
       />
 
     </div>
@@ -1450,31 +2207,42 @@ function EmptyGoals({
 
 function getProgress(goal) {
   const target =
-    Number(goal.targetAmount || 0);
+    Number(
+      goal.targetAmount || 0
+    );
 
   const current =
-    Number(goal.currentAmount || 0);
+    Number(
+      goal.currentAmount || 0
+    );
 
   if (
-    !Number.isFinite(target) ||
+    !Number.isFinite(
+      target
+    ) ||
     target <= 0
   ) {
     return 0;
   }
 
   if (
-    !Number.isFinite(current) ||
+    !Number.isFinite(
+      current
+    ) ||
     current <= 0
   ) {
     return 0;
   }
 
   return Math.round(
-    (current / target) * 100
+    (current / target) *
+      100
   );
 }
 
-function getTimestampValue(timestamp) {
+function getTimestampValue(
+  timestamp
+) {
   if (!timestamp) {
     return 0;
   }
@@ -1486,11 +2254,16 @@ function getTimestampValue(timestamp) {
     return timestamp.toMillis();
   }
 
-  if (timestamp instanceof Date) {
+  if (
+    timestamp instanceof Date
+  ) {
     return timestamp.getTime();
   }
 
-  if (typeof timestamp === "number") {
+  if (
+    typeof timestamp ===
+    "number"
+  ) {
     return timestamp;
   }
 
@@ -1501,10 +2274,25 @@ function getTimestampValue(timestamp) {
     return (
       timestamp.seconds * 1000 +
       Math.floor(
-        (timestamp.nanoseconds || 0) /
+        (timestamp.nanoseconds ||
+          0) /
           1000000
       )
     );
+  }
+
+  if (
+    typeof timestamp ===
+    "string"
+  ) {
+    const value =
+      new Date(
+        timestamp
+      ).getTime();
+
+    return Number.isNaN(value)
+      ? 0
+      : value;
   }
 
   return 0;
@@ -1515,12 +2303,15 @@ function formatDate(date) {
     return "";
   }
 
-  const value = new Date(
-    `${date}T00:00:00`
-  );
+  const value =
+    new Date(
+      `${date}T00:00:00`
+    );
 
   if (
-    Number.isNaN(value.getTime())
+    Number.isNaN(
+      value.getTime()
+    )
   ) {
     return date;
   }
@@ -1535,7 +2326,9 @@ function formatDate(date) {
   );
 }
 
-function getDeadlineInfo(deadline) {
+function getDeadlineInfo(
+  deadline
+) {
   if (!deadline) {
     return null;
   }
@@ -1557,5 +2350,17 @@ function getDeadlineInfo(deadline) {
     overdue:
       deadlineDate.getTime() <
       Date.now(),
+  };
+}
+
+// ===========================================================
+// SAFE EVENT HANDLER
+// ===========================================================
+
+function handleChangeSafe(
+  handler
+) {
+  return (event) => {
+    handler(event);
   };
 }

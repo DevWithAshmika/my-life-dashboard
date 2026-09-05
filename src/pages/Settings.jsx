@@ -14,6 +14,9 @@ import {
   RotateCcw,
   CheckCircle2,
   AlertTriangle,
+  FileText,
+  Trash2,
+  X,
 } from "lucide-react";
 
 import {
@@ -22,6 +25,7 @@ import {
   setDoc,
   collection,
   getDocs,
+  getDocsFromCache,
   deleteDoc,
 } from "firebase/firestore";
 
@@ -58,6 +62,114 @@ const DEFAULT_SETTINGS = {
 };
 
 // ===========================================================
+// LOCAL STORAGE HELPERS
+// ===========================================================
+
+const getSettingsBackupKey = (uid) =>
+  `my-dashboard-${uid}-settings`;
+
+const getProfileBackupKey = (uid) =>
+  `my-dashboard-${uid}-profile`;
+
+const loadSettingsBackup = (uid) => {
+  try {
+    const raw = localStorage.getItem(
+      getSettingsBackupKey(uid)
+    );
+
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+
+    return {
+      ...DEFAULT_SETTINGS,
+      ...parsed,
+    };
+  } catch (error) {
+    console.warn(
+      "Could not load local settings backup:",
+      error
+    );
+
+    return null;
+  }
+};
+
+const saveSettingsBackup = (uid, settings) => {
+  try {
+    localStorage.setItem(
+      getSettingsBackupKey(uid),
+      JSON.stringify(settings)
+    );
+  } catch (error) {
+    console.warn(
+      "Could not save local settings backup:",
+      error
+    );
+  }
+};
+
+const loadProfileBackup = (uid) => {
+  try {
+    return (
+      localStorage.getItem(
+        getProfileBackupKey(uid)
+      ) || ""
+    );
+  } catch (error) {
+    console.warn(
+      "Could not load local profile backup:",
+      error
+    );
+
+    return "";
+  }
+};
+
+const saveProfileBackup = (uid, name) => {
+  try {
+    localStorage.setItem(
+      getProfileBackupKey(uid),
+      name || ""
+    );
+  } catch (error) {
+    console.warn(
+      "Could not save local profile backup:",
+      error
+    );
+  }
+};
+
+const removeUserLocalBackups = (uid) => {
+  if (!uid) return;
+
+  const keys = [
+    getSettingsBackupKey(uid),
+    getProfileBackupKey(uid),
+
+    `my-dashboard-${uid}-finance`,
+    `my-dashboard-${uid}-tasks`,
+    `my-dashboard-${uid}-goals`,
+    `my-dashboard-${uid}-habits`,
+    `my-dashboard-${uid}-fitness`,
+    `my-dashboard-${uid}-calendar`,
+    `my-dashboard-${uid}-travel`,
+    `my-dashboard-${uid}-notes`,
+  ];
+
+  try {
+    keys.forEach((key) => {
+      localStorage.removeItem(key);
+    });
+  } catch (error) {
+    console.warn(
+      "Could not clear local dashboard backups:",
+      error
+    );
+  }
+};
+
+// ===========================================================
 // MAIN SETTINGS
 // ===========================================================
 
@@ -74,8 +186,10 @@ export default function Settings({ user }) {
     DEFAULT_SETTINGS
   );
 
+  const [privacyModal, setPrivacyModal] = useState(null);
+
   // =========================================================
-  // LOAD SETTINGS
+  // LOAD SETTINGS OFFLINE-FIRST
   // =========================================================
 
   useEffect(() => {
@@ -83,6 +197,8 @@ export default function Settings({ user }) {
       setLoading(false);
       return;
     }
+
+    let cancelled = false;
 
     const settingsRef = doc(
       db,
@@ -92,13 +208,68 @@ export default function Settings({ user }) {
       "preferences"
     );
 
+    // -------------------------------------------------------
+    // LOCAL SETTINGS FIRST
+    // -------------------------------------------------------
+
+    const localSettings =
+      loadSettingsBackup(user.uid);
+
+    if (localSettings) {
+      setSettings(localSettings);
+      setLoading(false);
+    }
+
+    // -------------------------------------------------------
+    // LOCAL PROFILE FIRST
+    // -------------------------------------------------------
+
+    const localProfile =
+      loadProfileBackup(user.uid);
+
+    if (localProfile) {
+      setProfileName(localProfile);
+    } else if (user?.displayName) {
+      setProfileName(user.displayName);
+
+      saveProfileBackup(
+        user.uid,
+        user.displayName
+      );
+    }
+
+    // -------------------------------------------------------
+    // FIRESTORE CACHE
+    // -------------------------------------------------------
+
+    getDocsFromCache(
+      collection(
+        db,
+        "users",
+        user.uid,
+        "settings"
+      )
+    ).catch(() => {
+      // Settings is a document, so collection cache
+      // may not always be available in the same way.
+    });
+
+    // -------------------------------------------------------
+    // FIRESTORE LIVE LISTENER
+    // -------------------------------------------------------
+
     const unsubscribe = onSnapshot(
       settingsRef,
+      {
+        includeMetadataChanges: true,
+      },
       (snapshot) => {
+        if (cancelled) return;
+
         if (snapshot.exists()) {
           const data = snapshot.data();
 
-          setSettings({
+          const nextSettings = {
             notifications:
               data.notifications !== false,
 
@@ -140,7 +311,21 @@ export default function Settings({ user }) {
 
             showRecentActivity:
               data.showRecentActivity !== false,
-          });
+          };
+
+          setSettings(nextSettings);
+
+          saveSettingsBackup(
+            user.uid,
+            nextSettings
+          );
+        } else {
+          const backup =
+            loadSettingsBackup(user.uid);
+
+          if (backup) {
+            setSettings(backup);
+          }
         }
 
         setLoading(false);
@@ -151,24 +336,75 @@ export default function Settings({ user }) {
           error
         );
 
+        const backup =
+          loadSettingsBackup(user.uid);
+
+        if (backup) {
+          setSettings(backup);
+        }
+
         setLoading(false);
       }
     );
 
-    return () => unsubscribe();
-  }, [user?.uid]);
+    // -------------------------------------------------------
+    // LOADING FALLBACK
+    // -------------------------------------------------------
+
+    const loadingTimer = setTimeout(() => {
+      if (!cancelled) {
+        setLoading(false);
+      }
+    }, 4000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(loadingTimer);
+      unsubscribe();
+    };
+  }, [
+    user?.uid,
+    user?.displayName,
+  ]);
 
   // =========================================================
-  // HANDLE CHANGE
+  // HANDLE SETTING CHANGE
   // =========================================================
 
   const handleChange = (name, value) => {
-    setSettings((previous) => ({
-      ...previous,
-      [name]: value,
-    }));
+    setSettings((previous) => {
+      const nextSettings = {
+        ...previous,
+        [name]: value,
+      };
+
+      if (user?.uid) {
+        saveSettingsBackup(
+          user.uid,
+          nextSettings
+        );
+      }
+
+      return nextSettings;
+    });
 
     setSaved(false);
+  };
+
+  // =========================================================
+  // HANDLE PROFILE NAME CHANGE
+  // =========================================================
+
+  const handleProfileNameChange = (value) => {
+    setProfileName(value);
+    setSaved(false);
+
+    if (user?.uid) {
+      saveProfileBackup(
+        user.uid,
+        value
+      );
+    }
   };
 
   // =========================================================
@@ -184,65 +420,88 @@ export default function Settings({ user }) {
     setSaving(true);
     setSaved(false);
 
-    try {
-      // ---------------------------------------------
-      // Save profile name
-      // ---------------------------------------------
+    const trimmedName =
+      profileName.trim();
 
-      const trimmedName = profileName.trim();
+    // -------------------------------------------------------
+    // SAVE LOCALLY FIRST
+    // -------------------------------------------------------
 
-      if (
-        auth.currentUser &&
-        trimmedName &&
-        auth.currentUser.displayName !== trimmedName
-      ) {
-        await updateProfile(auth.currentUser, {
-          displayName: trimmedName,
-        });
+    saveSettingsBackup(
+      user.uid,
+      settings
+    );
+
+    saveProfileBackup(
+      user.uid,
+      trimmedName
+    );
+
+    // -------------------------------------------------------
+    // UPDATE UI IMMEDIATELY
+    // -------------------------------------------------------
+
+    setSaved(true);
+
+    setTimeout(() => {
+      setSaved(false);
+    }, 2500);
+
+    // -------------------------------------------------------
+    // FIRESTORE SETTINGS
+    // -------------------------------------------------------
+
+    const settingsRef = doc(
+      db,
+      "users",
+      user.uid,
+      "settings",
+      "preferences"
+    );
+
+    void setDoc(
+      settingsRef,
+      {
+        ...settings,
+
+        theme: "dark",
+
+        updatedAt: new Date(),
+      },
+      {
+        merge: true,
       }
-
-      // ---------------------------------------------
-      // Save settings
-      // ---------------------------------------------
-
-      const settingsRef = doc(
-        db,
-        "users",
-        user.uid,
-        "settings",
-        "preferences"
-      );
-
-      await setDoc(
-        settingsRef,
-        {
-          ...settings,
-
-          // Project is permanently dark mode.
-          theme: "dark",
-
-          updatedAt: new Date(),
-        },
-        {
-          merge: true,
-        }
-      );
-
-      setSaved(true);
-
-      setTimeout(() => {
-        setSaved(false);
-      }, 2500);
-    } catch (error) {
-      console.error(
-        "Settings save error:",
+    ).catch((error) => {
+      console.warn(
+        "Settings will sync when online:",
         error
       );
+    });
 
-      alert("Could not save settings.");
-    } finally {
-      setSaving(false);
+    // -------------------------------------------------------
+    // FIREBASE PROFILE
+    // -------------------------------------------------------
+
+    if (
+      auth.currentUser &&
+      trimmedName &&
+      auth.currentUser.displayName !==
+        trimmedName
+    ) {
+      void updateProfile(
+        auth.currentUser,
+        {
+          displayName: trimmedName,
+        }
+      ).catch((error) => {
+        console.warn(
+          "Profile name will sync when online:",
+          error
+        );
+      });
     }
+
+    setSaving(false);
   };
 
   // =========================================================
@@ -284,6 +543,25 @@ export default function Settings({ user }) {
     try {
       setSaving(true);
 
+      const nextSettings = {
+        ...DEFAULT_SETTINGS,
+      };
+
+      // -----------------------------------------------------
+      // LOCAL FIRST
+      // -----------------------------------------------------
+
+      setSettings(nextSettings);
+
+      saveSettingsBackup(
+        user.uid,
+        nextSettings
+      );
+
+      // -----------------------------------------------------
+      // FIREBASE BACKGROUND SYNC
+      // -----------------------------------------------------
+
       const settingsRef = doc(
         db,
         "users",
@@ -292,12 +570,11 @@ export default function Settings({ user }) {
         "preferences"
       );
 
-      await setDoc(
+      void setDoc(
         settingsRef,
         {
-          ...DEFAULT_SETTINGS,
+          ...nextSettings,
 
-          // Always dark mode.
           theme: "dark",
 
           updatedAt: new Date(),
@@ -305,20 +582,31 @@ export default function Settings({ user }) {
         {
           merge: true,
         }
+      ).catch((error) => {
+        console.warn(
+          "Reset settings will sync when online:",
+          error
+        );
+      });
+
+      setSaved(true);
+
+      setTimeout(() => {
+        setSaved(false);
+      }, 2500);
+
+      alert(
+        "Settings reset successfully."
       );
-
-      setSettings(DEFAULT_SETTINGS);
-
-      setSaved(false);
-
-      alert("Settings reset successfully.");
     } catch (error) {
       console.error(
         "Reset settings error:",
         error
       );
 
-      alert("Could not reset settings.");
+      alert(
+        "Could not reset settings."
+      );
     } finally {
       setSaving(false);
     }
@@ -340,13 +628,44 @@ export default function Settings({ user }) {
       collectionName
     );
 
-    const snapshot = await getDocs(
-      collectionRef
-    );
+    let snapshot;
+
+    try {
+      snapshot = await getDocs(
+        collectionRef
+      );
+    } catch (error) {
+      console.warn(
+        `Could not read ${collectionName} online. Trying cache.`,
+        error
+      );
+
+      try {
+        snapshot = await getDocsFromCache(
+          collectionRef
+        );
+      } catch (cacheError) {
+        console.warn(
+          `Could not read ${collectionName} from cache.`,
+          cacheError
+        );
+
+        return;
+      }
+    }
+
+    // -------------------------------------------------------
+    // FIRESTORE DELETE
+    // -------------------------------------------------------
 
     await Promise.all(
       snapshot.docs.map((item) =>
-        deleteDoc(item.ref)
+        deleteDoc(item.ref).catch((error) => {
+          console.warn(
+            `Could not delete ${collectionName} document:`,
+            error
+          );
+        })
       )
     );
   };
@@ -384,8 +703,22 @@ export default function Settings({ user }) {
         "notes",
       ];
 
+      // -----------------------------------------------------
+      // REMOVE LOCAL BACKUPS FIRST
+      // -----------------------------------------------------
+
+      removeUserLocalBackups(
+        user.uid
+      );
+
+      // -----------------------------------------------------
+      // DELETE FIRESTORE DATA
+      // -----------------------------------------------------
+
       for (const collectionName of collections) {
-        await deleteCollection(collectionName);
+        await deleteCollection(
+          collectionName
+        );
       }
 
       alert(
@@ -398,11 +731,406 @@ export default function Settings({ user }) {
       );
 
       alert(
-        "Could not delete all data."
+        "Local data was cleared. Some cloud data may sync/delete when you are online."
       );
     } finally {
       setSaving(false);
     }
+  };
+
+  // =========================================================
+  // PRIVACY CONTENT
+  // =========================================================
+
+  const privacyContent = {
+    privacy: {
+      title: "Privacy Policy",
+      icon: <ShieldCheck size={20} />,
+      content: (
+        <div className="space-y-5 text-sm leading-6 text-white/60">
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              1. Information We Collect
+            </h3>
+
+            <p>
+              My Dashboard may collect and store information
+              that you provide when using the application.
+              This may include your name, email address,
+              profile photo, financial records, tasks, goals,
+              habits, fitness information, calendar events,
+              travel information and notes.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              2. Google Sign-In
+            </h3>
+
+            <p>
+              My Dashboard uses Google Sign-In for
+              authentication. We may receive your name,
+              email address, profile photo and Google account
+              identifier to provide your account.
+            </p>
+
+            <p className="mt-2">
+              Your Google password is not stored by
+              My Dashboard.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              3. How We Use Your Information
+            </h3>
+
+            <p>
+              Your information is used to provide and operate
+              My Dashboard, synchronize your data, display
+              financial information and analytics, manage
+              your dashboard features and maintain application
+              security.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              4. Financial Information
+            </h3>
+
+            <p>
+              My Dashboard may store income, expenses, amounts,
+              dates and categories that you enter. This
+              information is used to provide personal finance
+              tracking and analytics features.
+            </p>
+
+            <p className="mt-2">
+              My Dashboard does not provide financial,
+              investment, tax or legal advice.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              5. Data Storage
+            </h3>
+
+            <p>
+              My Dashboard uses Google Firebase services,
+              including Firebase Authentication and Cloud
+              Firestore, to authenticate users and store
+              application data.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              6. Offline Storage
+            </h3>
+
+            <p>
+              My Dashboard supports offline functionality.
+              To provide this feature, some application data
+              may be temporarily stored in the application's
+              local device storage and Firestore local cache.
+            </p>
+
+            <p className="mt-2">
+              Changes made while offline may remain on the
+              device until an internet connection becomes
+              available and the changes can be synchronized
+              with Firebase.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              7. Information Sharing
+            </h3>
+
+            <p>
+              We do not sell, rent or trade your personal
+              information. Information may be processed by
+              trusted third-party services that are required
+              to operate the application, including Firebase
+              services used for authentication and data
+              storage.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              8. Data Security
+            </h3>
+
+            <p>
+              My Dashboard uses Firebase Authentication and
+              Cloud Firestore to help protect account access
+              and user data. Access to cloud data should be
+              restricted through appropriate Firebase
+              security rules.
+            </p>
+
+            <p className="mt-2">
+              Data stored locally on your device may be
+              accessible according to the security of your
+              device and operating system. No internet-based
+              or local storage system can be guaranteed to be
+              completely secure.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              9. Data Deletion
+            </h3>
+
+            <p>
+              You can delete your dashboard data using the
+              Data Management section. Deleting dashboard data
+              removes the application records managed by
+              My Dashboard.
+            </p>
+
+            <p className="mt-2">
+              Account deletion is separate from deleting
+              dashboard records. If you want your Firebase
+              authentication account and associated personal
+              information deleted, you may request account
+              deletion from the application owner.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              10. Changes to This Policy
+            </h3>
+
+            <p>
+              This Privacy Policy may be updated from time to
+              time to reflect changes to the application,
+              technology or legal requirements.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <p className="text-xs text-white/40">
+              Last Updated: September 5, 2026
+            </p>
+          </div>
+
+        </div>
+      ),
+    },
+
+    terms: {
+      title: "Terms & Conditions",
+      icon: <FileText size={20} />,
+      content: (
+        <div className="space-y-5 text-sm leading-6 text-white/60">
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              1. Use of the Application
+            </h3>
+
+            <p>
+              My Dashboard is a personal productivity and
+              information management application designed to
+              help users manage finances, tasks, goals,
+              habits, calendar events, fitness, travel and
+              notes.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              2. User Account
+            </h3>
+
+            <p>
+              Some features require you to sign in using
+              Google. You are responsible for maintaining the
+              security of your account and device.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              3. User Data
+            </h3>
+
+            <p>
+              You are responsible for the information you
+              enter or upload into My Dashboard. You should
+              ensure that the information you provide is
+              accurate and appropriate.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              4. Offline Functionality
+            </h3>
+
+            <p>
+              Some features may continue to work when an
+              internet connection is unavailable. Changes
+              made while offline may be synchronized with
+              Firebase after connectivity is restored.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              5. Financial Disclaimer
+            </h3>
+
+            <p>
+              My Dashboard is a personal finance tracking tool.
+              It does not provide financial, investment, tax,
+              accounting or legal advice.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              6. Application Availability
+            </h3>
+
+            <p>
+              We aim to keep My Dashboard available and
+              reliable, but we cannot guarantee that the
+              application will always be available or
+              completely error-free.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              7. Prohibited Activities
+            </h3>
+
+            <p>
+              You must not attempt to gain unauthorized access
+              to the application, interfere with its operation,
+              introduce malicious software or access another
+              user's information.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              8. Intellectual Property
+            </h3>
+
+            <p>
+              The My Dashboard application, design, interface,
+              branding, software and original content may be
+              protected by applicable intellectual property
+              laws.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              9. Changes to These Terms
+            </h3>
+
+            <p>
+              These Terms & Conditions may be updated from
+              time to time. Continued use of the application
+              after changes become effective may constitute
+              acceptance of the updated terms.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <p className="text-xs text-white/40">
+              Last Updated: September 5, 2026
+            </p>
+          </div>
+
+        </div>
+      ),
+    },
+
+    deletion: {
+      title: "Data & Account Deletion",
+      icon: <Trash2 size={20} />,
+      content: (
+        <div className="space-y-5 text-sm leading-6 text-white/60">
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              Delete Dashboard Data
+            </h3>
+
+            <p>
+              You can permanently delete your Finance, Tasks,
+              Goals, Habits, Fitness, Calendar, Travel and
+              Notes data from the Data Management section.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              Local Data
+            </h3>
+
+            <p>
+              My Dashboard may keep temporary local copies of
+              your application data to support offline use.
+              When you use the Delete All Dashboard Data
+              function, these local application backups are
+              also cleared.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="mb-2 font-semibold text-white">
+              Delete Your Account
+            </h3>
+
+            <p>
+              Deleting dashboard data does not automatically
+              delete your Google or Firebase Authentication
+              account.
+            </p>
+
+            <p className="mt-2">
+              If you want to delete your My Dashboard account
+              and associated personal information, please
+              contact the application owner using the support
+              email address provided by the application.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-red-500/20 bg-red-500/[0.05] p-4">
+
+            <div className="flex items-start gap-3">
+
+              <AlertTriangle
+                size={18}
+                className="mt-0.5 shrink-0 text-red-400"
+              />
+
+              <p className="text-xs leading-5 text-white/50">
+                Deleting your dashboard data is permanent
+                and cannot be undone.
+              </p>
+
+            </div>
+
+          </div>
+
+        </div>
+      ),
+    },
   };
 
   // =========================================================
@@ -431,9 +1159,7 @@ export default function Settings({ user }) {
         <div className="flex items-center gap-3">
 
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10">
-
             <Settings2 size={22} />
-
           </div>
 
           <div>
@@ -477,7 +1203,7 @@ export default function Settings({ user }) {
               <input
                 value={profileName}
                 onChange={(e) =>
-                  setProfileName(
+                  handleProfileNameChange(
                     e.target.value
                   )
                 }
@@ -854,6 +1580,8 @@ export default function Settings({ user }) {
                   <p className="mt-1 text-xs leading-5 text-white/30">
                     Your dashboard data is stored in your
                     Firebase account and synced across sessions.
+                    Offline changes are synchronized when
+                    internet access becomes available.
                   </p>
 
                 </div>
@@ -934,10 +1662,55 @@ export default function Settings({ user }) {
         </SectionCard>
 
         {/* ===================================================
+            PRIVACY & SECURITY
+        ==================================================== */}
+
+        <SectionCard>
+
+          <SectionHeader
+            icon={<ShieldCheck size={20} />}
+            title="Privacy & Security"
+            subtitle="Manage your privacy, data and account information."
+          />
+
+          <div className="space-y-3">
+
+            <PrivacyRow
+              icon={<ShieldCheck size={18} />}
+              title="Privacy Policy"
+              description="Learn how your personal data is collected and protected."
+              onClick={() =>
+                setPrivacyModal("privacy")
+              }
+            />
+
+            <PrivacyRow
+              icon={<FileText size={18} />}
+              title="Terms & Conditions"
+              description="Read the terms for using My Dashboard."
+              onClick={() =>
+                setPrivacyModal("terms")
+              }
+            />
+
+            <PrivacyRow
+              icon={<Trash2 size={18} />}
+              title="Data & Account Deletion"
+              description="Learn how to delete your personal data and account."
+              onClick={() =>
+                setPrivacyModal("deletion")
+              }
+            />
+
+          </div>
+
+        </SectionCard>
+
+        {/* ===================================================
             SAVE SETTINGS
         ==================================================== */}
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+        <div className="flex flex-col gap-3 pb-8 sm:flex-row sm:justify-end">
 
           <button
             type="button"
@@ -969,7 +1742,7 @@ export default function Settings({ user }) {
             LOGOUT
         ==================================================== */}
 
-        <div className="border-t border-white/10 pt-5">
+        <div className="border-t border-white/10 pb-8 pt-5">
 
           <button
             type="button"
@@ -986,6 +1759,101 @@ export default function Settings({ user }) {
         </div>
 
       </div>
+
+      {/* =====================================================
+          PRIVACY MODAL
+      ====================================================== */}
+
+      {privacyModal &&
+        privacyContent[privacyModal] && (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 pb-20 backdrop-blur-md"
+            onClick={() =>
+              setPrivacyModal(null)
+            }
+          >
+
+            <div
+              className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#111111]/95 shadow-2xl backdrop-blur-2xl"
+              onClick={(e) =>
+                e.stopPropagation()
+              }
+            >
+
+              {/* Modal Header */}
+
+              <div className="flex items-center justify-between border-b border-white/10 p-5">
+
+                <div className="flex items-center gap-3">
+
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10">
+                    {privacyContent[
+                      privacyModal
+                    ].icon}
+                  </div>
+
+                  <div>
+
+                    <h2 className="font-semibold">
+                      {
+                        privacyContent[
+                          privacyModal
+                        ].title
+                      }
+                    </h2>
+
+                    <p className="mt-1 text-xs text-white/30">
+                      My Dashboard
+                    </p>
+
+                  </div>
+
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPrivacyModal(null)
+                  }
+                  className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-white/50 transition hover:bg-white/10 hover:text-white"
+                >
+                  <X size={20} />
+                </button>
+
+              </div>
+
+              {/* Modal Content */}
+
+              <div className="overflow-y-auto p-5 pb-8 sm:p-7">
+
+                {
+                  privacyContent[
+                    privacyModal
+                  ].content
+                }
+
+              </div>
+
+              {/* Modal Footer */}
+
+              <div className="border-t border-white/10 p-4">
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPrivacyModal(null)
+                  }
+                  className="w-full rounded-2xl bg-white px-5 py-3 font-semibold text-black transition hover:bg-white/90"
+                >
+                  Done
+                </button>
+
+              </div>
+
+            </div>
+
+          </div>
+        )}
 
     </div>
   );
@@ -1141,6 +2009,51 @@ function VisibilityRow({
           <EyeOff size={17} />
         )}
 
+      </div>
+
+    </button>
+  );
+}
+
+// ===========================================================
+// PRIVACY ROW
+// ===========================================================
+
+function PrivacyRow({
+  icon,
+  title,
+  description,
+  onClick,
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center justify-between rounded-2xl bg-white/[0.025] p-4 text-left transition hover:bg-white/[0.06]"
+    >
+
+      <div className="flex items-center gap-3">
+
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10">
+          {icon}
+        </div>
+
+        <div>
+
+          <p className="font-medium">
+            {title}
+          </p>
+
+          <p className="mt-1 text-xs leading-5 text-white/30">
+            {description}
+          </p>
+
+        </div>
+
+      </div>
+
+      <div className="text-white/30">
+        →
       </div>
 
     </button>

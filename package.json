@@ -1,21 +1,27 @@
 {
   "name": "my-life-dashboard",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "electron": "electron .",
+    "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:build": "npm run build && electron-builder --win"
   },
   "dependencies": {
     "@capacitor-firebase/authentication": "^8.5.1",
     "@capacitor/android": "^8.5.1",
+    "@capacitor/app": "^8.1.1",
     "@capacitor/cli": "^8.5.1",
     "@capacitor/core": "^8.5.1",
     "@capacitor/local-notifications": "^8.3.1",
     "@capacitor/network": "^8.0.1",
+    "@capacitor/splash-screen": "^8.0.2",
     "@tailwindcss/vite": "^4.3.3",
     "firebase": "^12.18.0",
     "lucide-react": "^1.37.0",
@@ -23,13 +29,46 @@
     "react-dom": "^19.2.8",
     "react-icons": "^5.7.0",
     "recharts": "^3.10.1",
-    "tailwindcss": "^4.3.3"
+    "tailwindcss": "^4.3.3",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.1.0",
+    "concurrently": "^9.2.4",
+    "electron": "^44.2.0",
+    "electron-builder": "^26.15.3",
     "oxlint": "^1.79.0",
-    "vite": "^8.2.2"
+    "vite": "^8.2.2",
+    "wait-on": "^8.0.5"
+  },
+  "build": {
+    "appId": "com.ashmika.mydashboard",
+    "productName": "My Dashboard",
+    "directories": {
+      "output": "C:\\MyDashboardBuild"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }

@@ -4,3 +4,11 @@ git push
 
 npm run build
 npx cap sync android
+npx cap open android
+
+cd "C:\Users\This PC\Documents\my finace\New folder\my-life-dashboard"
+npm run build
+npx cap sync android
+npx cap run android
+
+apk build : .\gradlew.bat assembleRelease

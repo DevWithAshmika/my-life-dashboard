@@ -28,15 +28,13 @@ export default function Header({
         sm:px-6
       "
     >
-      {/* LEFT - MOBILE MENU */}
+      {/* =====================================================
+          MOBILE MENU
+      ====================================================== */}
 
       <button
         type="button"
-        onClick={() => {
-          if (typeof onMenuClick === "function") {
-            onMenuClick();
-          }
-        }}
+        onClick={onMenuClick}
         aria-label="Open menu"
         className="
           flex
@@ -45,21 +43,36 @@ export default function Header({
           items-center
           justify-center
           rounded-xl
+          border
+          border-white/10
           bg-white/5
           text-white/70
-          transition
-          active:scale-95
+          transition-all
+          duration-200
           hover:bg-white/10
+          hover:text-white
+          active:scale-95
           lg:hidden
         "
       >
         <Menu size={21} />
       </button>
 
-      {/* RIGHT */}
+      {/* =====================================================
+          RIGHT SIDE
+      ====================================================== */}
 
-      <div className="ml-auto flex items-center gap-3">
-        <AppNotifications user={user} />
+      <div
+        className="
+          ml-auto
+          flex
+          items-center
+          gap-3
+        "
+      >
+        <AppNotifications
+          user={user}
+        />
 
         {/* PROFILE */}
 
@@ -81,17 +94,22 @@ export default function Header({
                 user?.displayName ||
                 "Profile"
               }
-              className="h-full w-full object-cover"
+              className="
+                h-full
+                w-full
+                object-cover
+              "
               referrerPolicy="no-referrer"
-              onError={(e) => {
-                e.currentTarget.style.display =
+              onError={(event) => {
+                event.currentTarget.style.display =
                   "none";
 
-                if (
-                  e.currentTarget
-                    .nextElementSibling
-                ) {
-                  e.currentTarget.nextElementSibling.style.display =
+                const fallback =
+                  event.currentTarget
+                    .nextElementSibling;
+
+                if (fallback) {
+                  fallback.style.display =
                     "flex";
                 }
               }}

@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 
 import {
-  addDoc,
   collection,
   deleteDoc,
   doc,
+  getDocsFromCache,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
 } from "firebase/firestore";
 
@@ -31,11 +32,75 @@ import {
   Filter,
   Loader2,
   CheckCheck,
+  Bell,
+  BellOff,
 } from "lucide-react";
 
 import { db } from "../firebase/config";
 
+import {
+  scheduleNotification,
+  cancelNotification,
+  requestNotificationPermission,
+  createNotificationChannel,
+} from "../utils/notifications";
+
 const priorities = ["low", "medium", "high"];
+
+/* =========================================================
+   LOCAL BACKUP HELPERS
+========================================================= */
+
+function getTasksBackupKey(uid) {
+  return `my-dashboard-${uid}-tasks`;
+}
+
+function loadTasksBackup(uid) {
+  if (!uid) return [];
+
+  try {
+    const raw = localStorage.getItem(
+      getTasksBackupKey(uid)
+    );
+
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+
+    return Array.isArray(parsed)
+      ? parsed
+      : [];
+  } catch (error) {
+    console.warn(
+      "Tasks local backup read error:",
+      error
+    );
+
+    return [];
+  }
+}
+
+function saveTasksBackup(uid, tasks) {
+  if (!uid || !Array.isArray(tasks)) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(
+      getTasksBackupKey(uid),
+      JSON.stringify(tasks)
+    );
+  } catch (error) {
+    console.warn(
+      "Tasks local backup save error:",
+      error
+    );
+  }
+}
+
+/* =========================================================
+   PRIORITY CONFIG
+========================================================= */
 
 const priorityConfig = {
   low: {
@@ -43,17 +108,23 @@ const priorityConfig = {
     className:
       "border-blue-400/20 bg-blue-500/10 text-blue-300",
   },
+
   medium: {
     label: "Medium",
     className:
       "border-blue-400/20 bg-blue-500/15 text-blue-200",
   },
+
   high: {
     label: "High",
     className:
       "border-red-400/20 bg-red-500/10 text-red-300",
   },
 };
+
+/* =========================================================
+   DATE HELPERS
+========================================================= */
 
 function getToday() {
   const date = new Date();
@@ -63,7 +134,9 @@ function getToday() {
     date.getTime() - offset * 60000
   );
 
-  return localDate.toISOString().split("T")[0];
+  return localDate
+    .toISOString()
+    .split("T")[0];
 }
 
 function isOverdue(task) {
@@ -86,34 +159,167 @@ function formatDate(dateString) {
   if (!dateString) return "";
 
   try {
-    return new Intl.DateTimeFormat("en-LK", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    }).format(
-      new Date(`${dateString}T00:00:00`)
+    return new Intl.DateTimeFormat(
+      "en-LK",
+      {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      }
+    ).format(
+      new Date(
+        `${dateString}T00:00:00`
+      )
     );
   } catch {
     return dateString;
   }
 }
 
+function createTaskReminderDate(
+  dueDate,
+  reminderTime
+) {
+  if (!dueDate) return null;
+
+  const time =
+    reminderTime || "09:00";
+
+  const date = new Date(
+    `${dueDate}T${time}:00`
+  );
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
+function getTaskNotificationId(taskId) {
+  return `task-${taskId}`;
+}
+
+/* =========================================================
+   SAFE NOTIFICATION SCHEDULING
+========================================================= */
+
+async function scheduleTaskReminderSafely({
+  taskId,
+  title,
+  description,
+  dueDate,
+  reminderTime,
+  reminderEnabled,
+}) {
+  if (
+    !reminderEnabled ||
+    !dueDate ||
+    !reminderTime
+  ) {
+    return;
+  }
+
+  const reminderDate =
+    createTaskReminderDate(
+      dueDate,
+      reminderTime
+    );
+
+  if (
+    !reminderDate ||
+    reminderDate.getTime() <= Date.now()
+  ) {
+    return;
+  }
+
+  try {
+    const granted =
+      await requestNotificationPermission();
+
+    if (!granted) {
+      return;
+    }
+
+    await createNotificationChannel();
+
+    await scheduleNotification({
+      id:
+        getTaskNotificationId(
+          taskId
+        ),
+
+      title:
+        `📋 ${title}`,
+
+      body:
+        description ||
+        `Don't forget to complete: ${title}`,
+
+      date: reminderDate,
+
+      extra: {
+        type: "task",
+
+        taskId:
+          String(taskId),
+
+        dueDate:
+          String(dueDate),
+
+        reminderTime:
+          String(reminderTime),
+      },
+    });
+
+    console.log(
+      "Task reminder scheduled:",
+      taskId
+    );
+  } catch (error) {
+    console.warn(
+      "Task reminder scheduling skipped:",
+      error
+    );
+  }
+}
+
+/* =========================================================
+   TASK PAGE
+========================================================= */
+
 export default function Tasks({ user }) {
-  const [tasks, setTasks] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [tasks, setTasks] =
+    useState([]);
 
-  const [showModal, setShowModal] = useState(false);
-  const [editingTask, setEditingTask] = useState(null);
+  const [loading, setLoading] =
+    useState(true);
 
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all");
-  const [sortBy, setSortBy] = useState("created");
+  const [showModal, setShowModal] =
+    useState(false);
 
-  const [deletingId, setDeletingId] = useState(null);
+  const [editingTask, setEditingTask] =
+    useState(null);
 
-  // =========================================================
-  // FIRESTORE LIVE DATA
-  // =========================================================
+  const [search, setSearch] =
+    useState("");
+
+  const [filter, setFilter] =
+    useState("all");
+
+  const [sortBy, setSortBy] =
+    useState("created");
+
+  const [deletingId, setDeletingId] =
+    useState(null);
+
+  /* =======================================================
+     FIRESTORE + OFFLINE CACHE
+  ======================================================= */
 
   useEffect(() => {
     if (!user?.uid) {
@@ -122,339 +328,1085 @@ export default function Tasks({ user }) {
       return;
     }
 
-    const tasksRef = collection(
-      db,
-      "users",
-      user.uid,
-      "tasks"
-    );
+    let mounted = true;
 
-    const tasksQuery = query(
-      tasksRef,
-      orderBy("createdAt", "desc")
-    );
-
-    const unsubscribe = onSnapshot(
-      tasksQuery,
-      (snapshot) => {
-        const data = snapshot.docs.map((item) => ({
-          id: item.id,
-          ...item.data(),
-        }));
-
-        setTasks(data);
-        setLoading(false);
-      },
-      (error) => {
-        console.error(
-          "Tasks Firestore Error:",
-          error
-        );
-
-        setLoading(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [user?.uid]);
-
-  // =========================================================
-  // TOGGLE TASK
-  // =========================================================
-
-  async function toggleTask(task) {
-    if (!user?.uid) return;
-
-    try {
-      await updateDoc(
-        doc(
-          db,
-          "users",
-          user.uid,
-          "tasks",
-          task.id
-        ),
-        {
-          completed: !task.completed,
-          completedAt: !task.completed
-            ? serverTimestamp()
-            : null,
-        }
-      );
-    } catch (error) {
-      console.error(
-        "Toggle task error:",
-        error
-      );
-
-      alert("Could not update task.");
-    }
-  }
-
-  // =========================================================
-  // DELETE TASK
-  // =========================================================
-
-  async function deleteTask(taskId) {
-    if (!user?.uid) return;
-
-    const confirmed = window.confirm(
-      "Delete this task?\n\nThis action cannot be undone."
-    );
-
-    if (!confirmed) return;
-
-    setDeletingId(taskId);
-
-    try {
-      await deleteDoc(
-        doc(
-          db,
-          "users",
-          user.uid,
-          "tasks",
-          taskId
-        )
-      );
-    } catch (error) {
-      console.error(
-        "Delete task error:",
-        error
-      );
-
-      alert("Could not delete task.");
-    } finally {
-      setDeletingId(null);
-    }
-  }
-
-  // =========================================================
-  // OPEN ADD MODAL
-  // =========================================================
-
-  function openAddModal() {
-    setEditingTask(null);
-    setShowModal(true);
-  }
-
-  // =========================================================
-  // OPEN EDIT MODAL
-  // =========================================================
-
-  function openEditModal(task) {
-    setEditingTask(task);
-    setShowModal(true);
-  }
-
-  // =========================================================
-  // CLOSE MODAL
-  // =========================================================
-
-  function closeModal() {
-    setShowModal(false);
-    setEditingTask(null);
-  }
-
-  // =========================================================
-  // SAVE TASK
-  // =========================================================
-
-  async function saveTask(data) {
-    if (!user?.uid) {
-      alert("You are not logged in.");
-      return;
-    }
-
-    try {
-      const tasksRef = collection(
+    const tasksRef =
+      collection(
         db,
         "users",
         user.uid,
         "tasks"
       );
 
-      if (editingTask) {
-        await updateDoc(
-          doc(
-            db,
-            "users",
-            user.uid,
-            "tasks",
-            editingTask.id
-          ),
-          {
-            title: data.title,
-            description: data.description,
-            priority: data.priority,
-            dueDate: data.dueDate,
-            tags: data.tags,
-            updatedAt: serverTimestamp(),
-          }
-        );
-      } else {
-        await addDoc(tasksRef, {
-          title: data.title,
-          description: data.description,
-          priority: data.priority,
-          dueDate: data.dueDate,
-          tags: data.tags,
-          completed: false,
-          completedAt: null,
-          createdAt: serverTimestamp(),
-        });
-      }
+    const tasksQuery =
+      query(
+        tasksRef,
+        orderBy(
+          "createdAt",
+          "desc"
+        )
+      );
 
-      closeModal();
-    } catch (error) {
+    /* -----------------------------------------------------
+       LOAD FIRESTORE CACHE
+    ----------------------------------------------------- */
+
+    const loadCache = async () => {
+      try {
+        const cacheSnapshot =
+          await getDocsFromCache(
+            tasksQuery
+          );
+
+        if (!mounted) return;
+
+        const cachedTasks =
+          cacheSnapshot.docs.map(
+            (item) => ({
+              id: item.id,
+              ...item.data(),
+            })
+          );
+
+        if (
+          cachedTasks.length > 0
+        ) {
+          setTasks(
+            cachedTasks
+          );
+
+          saveTasksBackup(
+            user.uid,
+            cachedTasks
+          );
+        } else {
+          const localBackup =
+            loadTasksBackup(
+              user.uid
+            );
+
+          if (
+            localBackup.length > 0
+          ) {
+            setTasks(
+              localBackup
+            );
+          }
+        }
+
+        setLoading(false);
+      } catch (error) {
+        console.warn(
+          "Tasks cache load error:",
+          error
+        );
+
+        if (!mounted) return;
+
+        const localBackup =
+          loadTasksBackup(
+            user.uid
+          );
+
+        if (
+          localBackup.length > 0
+        ) {
+          setTasks(
+            localBackup
+          );
+        }
+
+        setLoading(false);
+      }
+    };
+
+    loadCache();
+
+    /* -----------------------------------------------------
+       FIRESTORE LIVE LISTENER
+    ----------------------------------------------------- */
+
+    const unsubscribe =
+      onSnapshot(
+        tasksQuery,
+        {
+          includeMetadataChanges: true,
+        },
+        (snapshot) => {
+          if (!mounted) return;
+
+          const data =
+            snapshot.docs.map(
+              (item) => ({
+                id: item.id,
+                ...item.data(),
+              })
+            );
+
+          /*
+            Do not destroy existing local data with
+            an empty offline cached snapshot.
+          */
+
+          if (
+            data.length > 0 ||
+            !snapshot.metadata.fromCache
+          ) {
+            setTasks(data);
+
+            saveTasksBackup(
+              user.uid,
+              data
+            );
+          }
+
+          setLoading(false);
+        },
+        (error) => {
+          console.error(
+            "Tasks Firestore Error:",
+            error
+          );
+
+          if (!mounted) return;
+
+          const localBackup =
+            loadTasksBackup(
+              user.uid
+            );
+
+          if (
+            localBackup.length > 0
+          ) {
+            setTasks(
+              localBackup
+            );
+          }
+
+          setLoading(false);
+        }
+      );
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, [user?.uid]);
+
+  /* =======================================================
+     KEEP LOCAL BACKUP UPDATED
+  ======================================================= */
+
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    if (tasks.length > 0) {
+      saveTasksBackup(
+        user.uid,
+        tasks
+      );
+    }
+  }, [
+    user?.uid,
+    tasks,
+  ]);
+
+  /* =======================================================
+     TOGGLE TASK
+  ======================================================= */
+
+  function toggleTask(task) {
+    if (!user?.uid) return;
+
+    const newCompleted =
+      !task.completed;
+
+    const previousTasks =
+      tasks;
+
+    /*
+      Optimistic update.
+      UI changes immediately.
+    */
+
+    const updatedTasks =
+      tasks.map(
+        (item) =>
+          item.id === task.id
+            ? {
+                ...item,
+                completed:
+                  newCompleted,
+                completedAt:
+                  newCompleted
+                    ? new Date().toISOString()
+                    : null,
+              }
+            : item
+      );
+
+    setTasks(
+      updatedTasks
+    );
+
+    saveTasksBackup(
+      user.uid,
+      updatedTasks
+    );
+
+    /*
+      Firestore runs in background.
+    */
+
+    void updateDoc(
+      doc(
+        db,
+        "users",
+        user.uid,
+        "tasks",
+        task.id
+      ),
+      {
+        completed:
+          newCompleted,
+
+        completedAt:
+          newCompleted
+            ? serverTimestamp()
+            : null,
+      }
+    ).catch((error) => {
       console.error(
-        "Save task error:",
+        "Toggle task Firestore error:",
         error
       );
 
-      alert("Could not save task.");
+      /*
+        Restore only if Firestore genuinely
+        rejects the operation.
+      */
+
+      setTasks(
+        previousTasks
+      );
+
+      saveTasksBackup(
+        user.uid,
+        previousTasks
+      );
+    });
+
+    /*
+      Notification handling is completely separate.
+    */
+
+    if (newCompleted) {
+      void cancelNotification(
+        getTaskNotificationId(
+          task.id
+        )
+      ).catch((error) => {
+        console.warn(
+          "Task notification cancellation skipped:",
+          error
+        );
+      });
+
+      return;
+    }
+
+    if (
+      task.reminderEnabled &&
+      task.dueDate &&
+      task.reminderTime
+    ) {
+      void scheduleTaskReminderSafely({
+        taskId:
+          task.id,
+
+        title:
+          task.title,
+
+        description:
+          task.description,
+
+        dueDate:
+          task.dueDate,
+
+        reminderTime:
+          task.reminderTime,
+
+        reminderEnabled:
+          task.reminderEnabled,
+      });
     }
   }
 
-  // =========================================================
-  // FILTER + SORT
-  // =========================================================
+  /* =======================================================
+     DELETE TASK
+  ======================================================= */
 
-  const filteredTasks = useMemo(() => {
-    let result = tasks.filter((task) => {
-      const text = `
-        ${task.title || ""}
-        ${task.description || ""}
-        ${
-          Array.isArray(task.tags)
-            ? task.tags.join(" ")
-            : ""
-        }
-      `.toLowerCase();
+  function deleteTask(taskId) {
+    if (!user?.uid) return;
 
-      const matchesSearch = text.includes(
-        search.toLowerCase()
+    const confirmed =
+      window.confirm(
+        "Delete this task?\n\nThis action cannot be undone."
       );
 
-      if (!matchesSearch) {
-        return false;
-      }
+    if (!confirmed) return;
 
-      if (filter === "active") {
-        return !task.completed;
-      }
+    const previousTasks =
+      tasks;
 
-      if (filter === "completed") {
-        return task.completed;
-      }
+    /*
+      Optimistic delete.
+      Remove immediately.
+    */
 
-      if (filter === "high") {
-        return (
-          task.priority === "high" &&
-          !task.completed
-        );
-      }
+    const updatedTasks =
+      tasks.filter(
+        (task) =>
+          task.id !== taskId
+      );
 
-      if (filter === "today") {
-        return isDueToday(task);
-      }
+    setDeletingId(taskId);
 
-      if (filter === "overdue") {
-        return isOverdue(task);
-      }
+    setTasks(
+      updatedTasks
+    );
 
-      return true;
+    saveTasksBackup(
+      user.uid,
+      updatedTasks
+    );
+
+    /*
+      Cancel notification in background.
+    */
+
+    void cancelNotification(
+      getTaskNotificationId(
+        taskId
+      )
+    ).catch((error) => {
+      console.warn(
+        "Task notification cancellation skipped:",
+        error
+      );
     });
 
-    result = [...result].sort((a, b) => {
-      if (sortBy === "due") {
-        if (!a.dueDate && !b.dueDate) {
-          return 0;
-        }
+    /*
+      Firestore delete in background.
+    */
 
-        if (!a.dueDate) {
-          return 1;
-        }
+    void deleteDoc(
+      doc(
+        db,
+        "users",
+        user.uid,
+        "tasks",
+        taskId
+      )
+    ).catch((error) => {
+      console.error(
+        "Delete task Firestore error:",
+        error
+      );
 
-        if (!b.dueDate) {
-          return -1;
-        }
+      /*
+        Restore task if Firestore genuinely fails.
+      */
 
-        return a.dueDate.localeCompare(
-          b.dueDate
+      setTasks(
+        previousTasks
+      );
+
+      saveTasksBackup(
+        user.uid,
+        previousTasks
+      );
+    }).finally(() => {
+      setDeletingId(null);
+    });
+  }
+
+  /* =======================================================
+     OPEN ADD MODAL
+  ======================================================= */
+
+  function openAddModal() {
+    setEditingTask(null);
+    setShowModal(true);
+  }
+
+  /* =======================================================
+     OPEN EDIT MODAL
+  ======================================================= */
+
+  function openEditModal(task) {
+    setEditingTask(task);
+    setShowModal(true);
+  }
+
+  /* =======================================================
+     CLOSE MODAL
+  ======================================================= */
+
+  function closeModal() {
+    setShowModal(false);
+    setEditingTask(null);
+  }
+
+  /* =======================================================
+     SAVE TASK
+  ======================================================= */
+
+  async function saveTask(data) {
+    if (!user?.uid) {
+      alert(
+        "You are not logged in."
+      );
+
+      return;
+    }
+
+    const tasksRef =
+      collection(
+        db,
+        "users",
+        user.uid,
+        "tasks"
+      );
+
+    /* ===================================================
+       EDIT TASK
+    =================================================== */
+
+    if (editingTask) {
+      const taskId =
+        editingTask.id;
+
+      const taskRef =
+        doc(
+          db,
+          "users",
+          user.uid,
+          "tasks",
+          taskId
         );
+
+      const previousTask =
+        editingTask;
+
+      /*
+        Create optimistic task.
+      */
+
+      const updatedTask = {
+        ...previousTask,
+
+        title:
+          data.title,
+
+        description:
+          data.description,
+
+        priority:
+          data.priority,
+
+        dueDate:
+          data.dueDate,
+
+        tags:
+          data.tags,
+
+        reminderEnabled:
+          data.reminderEnabled,
+
+        reminderTime:
+          data.reminderTime,
+
+        updatedAt:
+          new Date().toISOString(),
+      };
+
+      /*
+        Update UI immediately.
+      */
+
+      setTasks(
+        (currentTasks) => {
+          const nextTasks =
+            currentTasks.map(
+              (item) =>
+                item.id === taskId
+                  ? updatedTask
+                  : item
+            );
+
+          saveTasksBackup(
+            user.uid,
+            nextTasks
+          );
+
+          return nextTasks;
+        }
+      );
+
+      /*
+        CLOSE MODAL IMMEDIATELY.
+
+        This is the important offline fix.
+      */
+
+      closeModal();
+
+      /*
+        Firestore update runs in background.
+        NO await.
+      */
+
+      void setDoc(
+        taskRef,
+        {
+          title:
+            data.title,
+
+          description:
+            data.description,
+
+          priority:
+            data.priority,
+
+          dueDate:
+            data.dueDate,
+
+          tags:
+            data.tags,
+
+          reminderEnabled:
+            data.reminderEnabled,
+
+          reminderTime:
+            data.reminderTime,
+
+          updatedAt:
+            serverTimestamp(),
+        },
+        {
+          merge: true,
+        }
+      ).catch((error) => {
+        console.error(
+          "Background task update error:",
+          error
+        );
+
+        /*
+          Restore previous task if the
+          Firestore operation genuinely fails.
+        */
+
+        setTasks(
+          (currentTasks) => {
+            const nextTasks =
+              currentTasks.map(
+                (item) =>
+                  item.id === taskId
+                    ? previousTask
+                    : item
+              );
+
+            saveTasksBackup(
+              user.uid,
+              nextTasks
+            );
+
+            return nextTasks;
+          }
+        );
+      });
+
+      /*
+        Cancel old notification in background.
+      */
+
+      void cancelNotification(
+        getTaskNotificationId(
+          taskId
+        )
+      ).catch((error) => {
+        console.warn(
+          "Old task notification cancellation skipped:",
+          error
+        );
+      });
+
+      /*
+        Schedule new notification in background.
+      */
+
+      if (
+        data.reminderEnabled &&
+        data.dueDate &&
+        data.reminderTime &&
+        !editingTask.completed
+      ) {
+        void scheduleTaskReminderSafely({
+          taskId,
+
+          title:
+            data.title,
+
+          description:
+            data.description,
+
+          dueDate:
+            data.dueDate,
+
+          reminderTime:
+            data.reminderTime,
+
+          reminderEnabled:
+            data.reminderEnabled,
+        });
       }
 
-      if (sortBy === "priority") {
-        const values = {
-          high: 3,
-          medium: 2,
-          low: 1,
-        };
+      return;
+    }
 
-        return (
-          (values[b.priority] || 0) -
-          (values[a.priority] || 0)
+    /* ===================================================
+       CREATE TASK
+    =================================================== */
+
+    /*
+      Generate Firestore ID locally.
+      No addDoc() wait required.
+    */
+
+    const newTaskRef =
+      doc(tasksRef);
+
+    const taskId =
+      newTaskRef.id;
+
+    /*
+      Optimistic local task.
+    */
+
+    const newTask = {
+      id:
+        taskId,
+
+      title:
+        data.title,
+
+      description:
+        data.description,
+
+      priority:
+        data.priority,
+
+      dueDate:
+        data.dueDate,
+
+      tags:
+        data.tags,
+
+      completed:
+        false,
+
+      completedAt:
+        null,
+
+      reminderEnabled:
+        data.reminderEnabled,
+
+      reminderTime:
+        data.reminderTime,
+
+      createdAt:
+        new Date().toISOString(),
+    };
+
+    /*
+      Add immediately to UI.
+    */
+
+    setTasks(
+      (currentTasks) => {
+        const nextTasks = [
+          newTask,
+          ...currentTasks,
+        ];
+
+        saveTasksBackup(
+          user.uid,
+          nextTasks
         );
-      }
 
-      if (sortBy === "title") {
-        return String(
-          a.title || ""
-        ).localeCompare(
-          String(b.title || "")
-        );
+        return nextTasks;
       }
+    );
 
-      return 0;
+    /*
+      CLOSE MODAL IMMEDIATELY.
+
+      No Firestore await.
+    */
+
+    closeModal();
+
+    /*
+      Save to Firestore in background.
+
+      Offline:
+      Firestore local persistence keeps the write
+      and syncs when connection returns.
+    */
+
+    void setDoc(
+      newTaskRef,
+      {
+        title:
+          data.title,
+
+        description:
+          data.description,
+
+        priority:
+          data.priority,
+
+        dueDate:
+          data.dueDate,
+
+        tags:
+          data.tags,
+
+        completed:
+          false,
+
+        completedAt:
+          null,
+
+        reminderEnabled:
+          data.reminderEnabled,
+
+        reminderTime:
+          data.reminderTime,
+
+        createdAt:
+          serverTimestamp(),
+      }
+    ).catch((error) => {
+      console.error(
+        "Background task create error:",
+        error
+      );
+
+      /*
+        Remove optimistic task only if
+        Firestore genuinely rejects it.
+      */
+
+      setTasks(
+        (currentTasks) => {
+          const nextTasks =
+            currentTasks.filter(
+              (item) =>
+                item.id !== taskId
+            );
+
+          saveTasksBackup(
+            user.uid,
+            nextTasks
+          );
+
+          return nextTasks;
+        }
+      );
     });
 
-    return result;
-  }, [
-    tasks,
-    search,
-    filter,
-    sortBy,
-  ]);
+    /*
+      Notification completely independent.
+    */
 
-  // =========================================================
-  // STATISTICS
-  // =========================================================
+    if (
+      data.reminderEnabled &&
+      data.dueDate &&
+      data.reminderTime
+    ) {
+      void scheduleTaskReminderSafely({
+        taskId,
 
-  const totalCount = tasks.length;
+        title:
+          data.title,
 
-  const completedCount = tasks.filter(
-    (task) => task.completed
-  ).length;
+        description:
+          data.description,
 
-  const activeCount = tasks.filter(
-    (task) => !task.completed
-  ).length;
+        dueDate:
+          data.dueDate,
 
-  const highCount = tasks.filter(
-    (task) =>
-      task.priority === "high" &&
-      !task.completed
-  ).length;
+        reminderTime:
+          data.reminderTime,
 
-  const overdueCount = tasks.filter(
-    (task) => isOverdue(task)
-  ).length;
+        reminderEnabled:
+          data.reminderEnabled,
+      });
+    }
+  }
 
-  const todayCount = tasks.filter(
-    (task) => isDueToday(task)
-  ).length;
+  /* =======================================================
+     FILTER + SORT
+  ======================================================= */
+
+  const filteredTasks =
+    useMemo(() => {
+      let result =
+        tasks.filter(
+          (task) => {
+            const text = `
+              ${task.title || ""}
+              ${task.description || ""}
+              ${
+                Array.isArray(
+                  task.tags
+                )
+                  ? task.tags.join(
+                      " "
+                    )
+                  : ""
+              }
+            `.toLowerCase();
+
+            const matchesSearch =
+              text.includes(
+                search.toLowerCase()
+              );
+
+            if (
+              !matchesSearch
+            ) {
+              return false;
+            }
+
+            if (
+              filter ===
+              "active"
+            ) {
+              return !task.completed;
+            }
+
+            if (
+              filter ===
+              "completed"
+            ) {
+              return task.completed;
+            }
+
+            if (
+              filter ===
+              "high"
+            ) {
+              return (
+                task.priority ===
+                  "high" &&
+                !task.completed
+              );
+            }
+
+            if (
+              filter ===
+              "today"
+            ) {
+              return isDueToday(
+                task
+              );
+            }
+
+            if (
+              filter ===
+              "overdue"
+            ) {
+              return isOverdue(
+                task
+              );
+            }
+
+            return true;
+          }
+        );
+
+      result =
+        [...result].sort(
+          (a, b) => {
+            if (
+              sortBy === "due"
+            ) {
+              if (
+                !a.dueDate &&
+                !b.dueDate
+              ) {
+                return 0;
+              }
+
+              if (
+                !a.dueDate
+              ) {
+                return 1;
+              }
+
+              if (
+                !b.dueDate
+              ) {
+                return -1;
+              }
+
+              return a.dueDate.localeCompare(
+                b.dueDate
+              );
+            }
+
+            if (
+              sortBy ===
+              "priority"
+            ) {
+              const values = {
+                high: 3,
+                medium: 2,
+                low: 1,
+              };
+
+              return (
+                (values[
+                  b.priority
+                ] || 0) -
+                (values[
+                  a.priority
+                ] || 0)
+              );
+            }
+
+            if (
+              sortBy === "title"
+            ) {
+              return String(
+                a.title || ""
+              ).localeCompare(
+                String(
+                  b.title || ""
+                )
+              );
+            }
+
+            /*
+              Newest.
+              Firestore timestamps and local ISO strings
+              can both be converted to milliseconds.
+            */
+
+            const getTime =
+              (value) => {
+                if (!value) return 0;
+
+                if (
+                  typeof value.toMillis ===
+                  "function"
+                ) {
+                  return value.toMillis();
+                }
+
+                if (
+                  value.seconds
+                ) {
+                  return (
+                    value.seconds *
+                    1000
+                  );
+                }
+
+                const time =
+                  new Date(
+                    value
+                  ).getTime();
+
+                return Number.isNaN(
+                  time
+                )
+                  ? 0
+                  : time;
+              };
+
+            return (
+              getTime(
+                b.createdAt
+              ) -
+              getTime(
+                a.createdAt
+              )
+            );
+          }
+        );
+
+      return result;
+    }, [
+      tasks,
+      search,
+      filter,
+      sortBy,
+    ]);
+
+  /* =======================================================
+     STATISTICS
+  ======================================================= */
+
+  const totalCount =
+    tasks.length;
+
+  const completedCount =
+    tasks.filter(
+      (task) =>
+        task.completed
+    ).length;
+
+  const activeCount =
+    tasks.filter(
+      (task) =>
+        !task.completed
+    ).length;
+
+  const highCount =
+    tasks.filter(
+      (task) =>
+        task.priority ===
+          "high" &&
+        !task.completed
+    ).length;
+
+  const overdueCount =
+    tasks.filter((task) =>
+      isOverdue(task)
+    ).length;
+
+  const todayCount =
+    tasks.filter((task) =>
+      isDueToday(task)
+    ).length;
 
   const progress =
     totalCount === 0
       ? 0
       : Math.round(
-          (completedCount / totalCount) *
+          (completedCount /
+            totalCount) *
             100
         );
 
-  // =========================================================
-  // LOADING
-  // =========================================================
+  /* =======================================================
+     LOADING
+  ======================================================= */
 
   if (loading) {
     return (
@@ -475,9 +1427,9 @@ export default function Tasks({ user }) {
     );
   }
 
-  // =========================================================
-  // UI
-  // =========================================================
+  /* =======================================================
+     UI
+  ======================================================= */
 
   return (
     <div className="min-h-screen pb-24 text-white sm:pb-0">
@@ -507,7 +1459,9 @@ export default function Tasks({ user }) {
 
         <button
           type="button"
-          onClick={openAddModal}
+          onClick={
+            openAddModal
+          }
           className="flex items-center justify-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 text-sm font-semibold text-white shadow-xl shadow-blue-500/20 transition hover:bg-blue-400 active:scale-[0.98]"
         >
           <Plus size={18} />
@@ -519,35 +1473,49 @@ export default function Tasks({ user }) {
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Stat
-          icon={<ListTodo size={18} />}
+          icon={
+            <ListTodo size={18} />
+          }
           title="Total"
           value={totalCount}
           iconClass="bg-blue-500/10 text-blue-300"
         />
 
         <Stat
-          icon={<Circle size={18} />}
+          icon={
+            <Circle size={18} />
+          }
           title="Active"
           value={activeCount}
           iconClass="bg-blue-500/10 text-blue-300"
         />
 
         <Stat
-          icon={<CheckCircle2 size={18} />}
+          icon={
+            <CheckCircle2
+              size={18}
+            />
+          }
           title="Completed"
           value={completedCount}
           iconClass="bg-green-500/10 text-green-300"
         />
 
         <Stat
-          icon={<Flag size={18} />}
+          icon={
+            <Flag size={18} />
+          }
           title="High Priority"
           value={highCount}
           iconClass="bg-red-500/10 text-red-300"
         />
 
         <Stat
-          icon={<AlertCircle size={18} />}
+          icon={
+            <AlertCircle
+              size={18}
+            />
+          }
           title="Overdue"
           value={overdueCount}
           iconClass="bg-red-500/10 text-red-300"
@@ -560,7 +1528,9 @@ export default function Tasks({ user }) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-500/10 text-green-300">
-              <CheckCheck size={19} />
+              <CheckCheck
+                size={19}
+              />
             </div>
 
             <div>
@@ -570,7 +1540,8 @@ export default function Tasks({ user }) {
 
               <p className="mt-1 text-xs text-white/30">
                 {completedCount} of{" "}
-                {totalCount} completed
+                {totalCount}{" "}
+                completed
               </p>
             </div>
           </div>
@@ -612,7 +1583,8 @@ export default function Tasks({ user }) {
               value={search}
               onChange={(event) =>
                 setSearch(
-                  event.target.value
+                  event.target
+                    .value
                 )
               }
               placeholder="Search tasks, descriptions or tags..."
@@ -630,7 +1602,8 @@ export default function Tasks({ user }) {
               value={filter}
               onChange={(event) =>
                 setFilter(
-                  event.target.value
+                  event.target
+                    .value
                 )
               }
               className="flex-1 rounded-2xl border border-white/10 bg-[#111] px-4 py-3 text-sm outline-none focus:border-blue-400/30 sm:flex-none"
@@ -671,7 +1644,8 @@ export default function Tasks({ user }) {
               value={sortBy}
               onChange={(event) =>
                 setSortBy(
-                  event.target.value
+                  event.target
+                    .value
                 )
               }
               className="flex-1 rounded-2xl border border-white/10 bg-[#111] px-4 py-3 text-sm outline-none focus:border-blue-400/30 sm:flex-none"
@@ -701,39 +1675,59 @@ export default function Tasks({ user }) {
 
       <div className="mb-5 flex gap-2 overflow-x-auto pb-1">
         <QuickFilter
-          active={filter === "all"}
-          onClick={() => setFilter("all")}
+          active={
+            filter === "all"
+          }
+          onClick={() =>
+            setFilter("all")
+          }
           label={`All ${totalCount}`}
           color="blue"
         />
 
         <QuickFilter
-          active={filter === "active"}
-          onClick={() => setFilter("active")}
+          active={
+            filter === "active"
+          }
+          onClick={() =>
+            setFilter("active")
+          }
           label={`Active ${activeCount}`}
           color="blue"
         />
 
         <QuickFilter
-          active={filter === "today"}
-          onClick={() => setFilter("today")}
+          active={
+            filter === "today"
+          }
+          onClick={() =>
+            setFilter("today")
+          }
           label={`Today ${todayCount}`}
           color="blue"
         />
 
         <QuickFilter
-          active={filter === "completed"}
+          active={
+            filter === "completed"
+          }
           onClick={() =>
-            setFilter("completed")
+            setFilter(
+              "completed"
+            )
           }
           label={`Completed ${completedCount}`}
           color="green"
         />
 
         <QuickFilter
-          active={filter === "overdue"}
+          active={
+            filter === "overdue"
+          }
           onClick={() =>
-            setFilter("overdue")
+            setFilter(
+              "overdue"
+            )
           }
           label={`Overdue ${overdueCount}`}
           color="red"
@@ -743,10 +1737,13 @@ export default function Tasks({ user }) {
       {/* TASK LIST */}
 
       <div className="space-y-3">
-        {filteredTasks.length === 0 ? (
+        {filteredTasks.length ===
+        0 ? (
           <div className="rounded-3xl border border-white/10 bg-white/[0.035] px-5 py-16 text-center backdrop-blur-2xl">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-blue-400/10 bg-blue-500/10 text-blue-300/60">
-              <ListTodo size={25} />
+              <ListTodo
+                size={25}
+              />
             </div>
 
             <p className="mt-4 font-medium">
@@ -759,31 +1756,42 @@ export default function Tasks({ user }) {
 
             <button
               type="button"
-              onClick={openAddModal}
+              onClick={
+                openAddModal
+              }
               className="mt-5 rounded-xl bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20"
             >
               Add Task
             </button>
           </div>
         ) : (
-          filteredTasks.map((task) => (
-            <TaskCard
-              key={task.id}
-              task={task}
-              onToggle={() =>
-                toggleTask(task)
-              }
-              onEdit={() =>
-                openEditModal(task)
-              }
-              onDelete={() =>
-                deleteTask(task.id)
-              }
-              deleting={
-                deletingId === task.id
-              }
-            />
-          ))
+          filteredTasks.map(
+            (task) => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                onToggle={() =>
+                  toggleTask(
+                    task
+                  )
+                }
+                onEdit={() =>
+                  openEditModal(
+                    task
+                  )
+                }
+                onDelete={() =>
+                  deleteTask(
+                    task.id
+                  )
+                }
+                deleting={
+                  deletingId ===
+                  task.id
+                }
+              />
+            )
+          )
         )}
       </div>
 
@@ -791,7 +1799,9 @@ export default function Tasks({ user }) {
 
       <button
         type="button"
-        onClick={openAddModal}
+        onClick={
+          openAddModal
+        }
         aria-label="Add task"
         className="fixed bottom-24 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-blue-500 text-white shadow-2xl shadow-blue-500/30 transition hover:bg-blue-400 active:scale-90 sm:hidden"
       >
@@ -806,7 +1816,9 @@ export default function Tasks({ user }) {
       {showModal && (
         <TaskModal
           task={editingTask}
-          onClose={closeModal}
+          onClose={
+            closeModal
+          }
           onSave={saveTask}
         />
       )}
@@ -814,9 +1826,9 @@ export default function Tasks({ user }) {
   );
 }
 
-/* ===========================================================
+/* =========================================================
    STAT
-=========================================================== */
+========================================================= */
 
 function Stat({
   icon,
@@ -847,9 +1859,9 @@ function Stat({
   );
 }
 
-/* ===========================================================
+/* =========================================================
    QUICK FILTER
-=========================================================== */
+========================================================= */
 
 function QuickFilter({
   active,
@@ -883,9 +1895,9 @@ function QuickFilter({
   );
 }
 
-/* ===========================================================
+/* =========================================================
    TASK CARD
-=========================================================== */
+========================================================= */
 
 function TaskCard({
   task,
@@ -894,11 +1906,16 @@ function TaskCard({
   onDelete,
   deleting,
 }) {
-  const overdue = isOverdue(task);
-  const today = isDueToday(task);
+  const overdue =
+    isOverdue(task);
+
+  const today =
+    isDueToday(task);
 
   const priority =
-    priorityConfig[task.priority] ||
+    priorityConfig[
+      task.priority
+    ] ||
     priorityConfig.medium;
 
   return (
@@ -962,14 +1979,18 @@ function TaskCard({
 
             {overdue && (
               <span className="flex items-center gap-1 rounded-full border border-red-400/20 bg-red-500/10 px-2 py-1 text-[10px] text-red-300">
-                <AlertCircle size={11} />
+                <AlertCircle
+                  size={11}
+                />
                 Overdue
               </span>
             )}
 
             {today && (
               <span className="flex items-center gap-1 rounded-full border border-blue-400/20 bg-blue-500/10 px-2 py-1 text-[10px] text-blue-300">
-                <Clock size={11} />
+                <Clock
+                  size={11}
+                />
                 Today
               </span>
             )}
@@ -980,6 +2001,16 @@ function TaskCard({
                 Completed
               </span>
             )}
+
+            {task.reminderEnabled &&
+              !task.completed && (
+                <span className="flex items-center gap-1 rounded-full border border-blue-400/20 bg-blue-500/10 px-2 py-1 text-[10px] text-blue-300">
+                  <Bell
+                    size={11}
+                  />
+                  Reminder
+                </span>
+              )}
           </div>
 
           {/* DESCRIPTION */}
@@ -992,16 +2023,24 @@ function TaskCard({
 
           {/* TAGS */}
 
-          {Array.isArray(task.tags) &&
-            task.tags.length > 0 && (
+          {Array.isArray(
+            task.tags
+          ) &&
+            task.tags.length >
+              0 && (
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {task.tags.map(
-                  (tag, index) => (
+                  (
+                    tag,
+                    index
+                  ) => (
                     <span
                       key={`${tag}-${index}`}
                       className="flex items-center gap-1 rounded-lg border border-blue-400/10 bg-blue-500/[0.05] px-2 py-1 text-[10px] text-blue-200/50"
                     >
-                      <Tag size={10} />
+                      <Tag
+                        size={10}
+                      />
                       {tag}
                     </span>
                   )
@@ -1023,7 +2062,9 @@ function TaskCard({
                   : "text-white/30"
               }`}
             >
-              <CalendarDays size={13} />
+              <CalendarDays
+                size={13}
+              />
 
               <span>
                 {overdue
@@ -1032,6 +2073,15 @@ function TaskCard({
                 {formatDate(
                   task.dueDate
                 )}
+
+                {task.reminderEnabled &&
+                  !task.completed &&
+                  task.reminderTime && (
+                    <span className="ml-2 text-blue-300/50">
+                      •{" "}
+                      {task.reminderTime}
+                    </span>
+                  )}
               </span>
             </div>
           )}
@@ -1047,7 +2097,9 @@ function TaskCard({
             aria-label="Edit task"
             className="rounded-xl p-2 text-white/25 transition hover:bg-blue-500/10 hover:text-blue-300"
           >
-            <Pencil size={15} />
+            <Pencil
+              size={15}
+            />
           </button>
 
           <button
@@ -1063,7 +2115,9 @@ function TaskCard({
                 className="animate-spin"
               />
             ) : (
-              <Trash2 size={15} />
+              <Trash2
+                size={15}
+              />
             )}
           </button>
 
@@ -1073,18 +2127,19 @@ function TaskCard({
   );
 }
 
-/* ===========================================================
+/* =========================================================
    TASK MODAL
-=========================================================== */
+========================================================= */
 
 function TaskModal({
   task,
   onClose,
   onSave,
 }) {
-  const [title, setTitle] = useState(
-    task?.title || ""
-  );
+  const [title, setTitle] =
+    useState(
+      task?.title || ""
+    );
 
   const [description, setDescription] =
     useState(
@@ -1093,22 +2148,44 @@ function TaskModal({
 
   const [priority, setPriority] =
     useState(
-      task?.priority || "medium"
+      task?.priority ||
+        "medium"
     );
 
-  const [dueDate, setDueDate] = useState(
-    task?.dueDate || ""
-  );
+  const [dueDate, setDueDate] =
+    useState(
+      task?.dueDate || ""
+    );
 
   const [tagsText, setTagsText] =
     useState(
-      Array.isArray(task?.tags)
-        ? task.tags.join(", ")
+      Array.isArray(
+        task?.tags
+      )
+        ? task.tags.join(
+            ", "
+          )
         : ""
+    );
+
+  const [reminderEnabled, setReminderEnabled] =
+    useState(
+      task?.reminderEnabled ===
+        true
+    );
+
+  const [reminderTime, setReminderTime] =
+    useState(
+      task?.reminderTime ||
+        "09:00"
     );
 
   const [saving, setSaving] =
     useState(false);
+
+  /* =======================================================
+     SUBMIT
+  ======================================================= */
 
   async function submit(event) {
     event.preventDefault();
@@ -1117,34 +2194,96 @@ function TaskModal({
       alert(
         "Please enter a task title."
       );
+
       return;
     }
 
-    const tags = tagsText
-      .split(",")
-      .map((tag) => tag.trim())
-      .filter(Boolean)
-      .slice(0, 10);
+    if (
+      reminderEnabled &&
+      !dueDate
+    ) {
+      alert(
+        "Please select a Due Date before enabling the reminder."
+      );
+
+      return;
+    }
+
+    if (
+      reminderEnabled &&
+      !reminderTime
+    ) {
+      alert(
+        "Please select a reminder time."
+      );
+
+      return;
+    }
+
+    if (saving) {
+      return;
+    }
+
+    const tags =
+      tagsText
+        .split(",")
+        .map(
+          (tag) =>
+            tag.trim()
+        )
+        .filter(Boolean)
+        .slice(0, 10);
 
     setSaving(true);
 
     try {
+      /*
+        onSave updates local UI immediately and
+        closes the modal without waiting for
+        Firestore/network.
+      */
+
       await onSave({
-        title: title.trim(),
+        title:
+          title.trim(),
+
         description:
           description.trim(),
+
         priority,
+
         dueDate,
+
         tags,
+
+        reminderEnabled,
+
+        reminderTime,
       });
-    } finally {
+
+      /*
+        If the modal is still mounted for any reason,
+        release saving state.
+      */
+
       setSaving(false);
+    } catch (error) {
+      console.error(
+        "Task modal save error:",
+        error
+      );
+
+      setSaving(false);
+
+      alert(
+        "Could not save task."
+      );
     }
   }
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/75 p-0 backdrop-blur-md sm:items-center sm:p-4"
+      className="fixed inset-0 z-[9999] flex items-end justify-center overflow-hidden bg-black/75 p-0 pb-[env(safe-area-inset-bottom)] backdrop-blur-md sm:items-center sm:p-4"
       onMouseDown={(event) => {
         if (
           event.target ===
@@ -1155,7 +2294,7 @@ function TaskModal({
         }
       }}
     >
-      <div className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl border border-blue-400/10 bg-[#101010]/95 shadow-2xl backdrop-blur-2xl sm:max-w-lg sm:rounded-3xl">
+      <div className="flex max-h-[calc(100dvh-20px)] w-full flex-col overflow-hidden rounded-t-3xl border border-blue-400/10 bg-[#101010]/95 shadow-2xl backdrop-blur-2xl sm:max-h-[90vh] sm:max-w-lg sm:rounded-3xl">
 
         {/* HEADER */}
 
@@ -1164,7 +2303,9 @@ function TaskModal({
           <div>
             <div className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10 text-blue-300">
-                <ListTodo size={15} />
+                <ListTodo
+                  size={15}
+                />
               </div>
 
               <p className="text-xs text-blue-300/60">
@@ -1191,7 +2332,8 @@ function TaskModal({
 
         {/* FORM */}
 
-        <div className="overflow-y-auto p-5 sm:p-6">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 pb-8 sm:p-6">
+
           <form
             onSubmit={submit}
             className="space-y-4"
@@ -1209,7 +2351,8 @@ function TaskModal({
                 value={title}
                 onChange={(event) =>
                   setTitle(
-                    event.target.value
+                    event.target
+                      .value
                   )
                 }
                 placeholder="e.g. Finish website"
@@ -1227,10 +2370,15 @@ function TaskModal({
               </label>
 
               <textarea
-                value={description}
-                onChange={(event) =>
+                value={
+                  description
+                }
+                onChange={(
+                  event
+                ) =>
                   setDescription(
-                    event.target.value
+                    event.target
+                      .value
                   )
                 }
                 placeholder="Optional description"
@@ -1254,11 +2402,16 @@ function TaskModal({
                       key={item}
                       type="button"
                       onClick={() =>
-                        setPriority(item)
+                        setPriority(
+                          item
+                        )
                       }
-                      disabled={saving}
+                      disabled={
+                        saving
+                      }
                       className={`flex items-center justify-center gap-1.5 rounded-2xl border py-3 text-xs capitalize transition ${
-                        priority === item
+                        priority ===
+                        item
                           ? item ===
                             "high"
                             ? "border-red-400/30 bg-red-500 text-white"
@@ -1266,7 +2419,10 @@ function TaskModal({
                           : "border-white/10 bg-white/[0.04] text-white/40 hover:bg-white/[0.07]"
                       }`}
                     >
-                      <Flag size={13} />
+                      <Flag
+                        size={13}
+                      />
+
                       {item}
                     </button>
                   )
@@ -1289,14 +2445,21 @@ function TaskModal({
 
                 <input
                   type="text"
-                  value={tagsText}
-                  onChange={(event) =>
+                  value={
+                    tagsText
+                  }
+                  onChange={(
+                    event
+                  ) =>
                     setTagsText(
-                      event.target.value
+                      event.target
+                        .value
                     )
                   }
                   placeholder="work, personal, urgent"
-                  disabled={saving}
+                  disabled={
+                    saving
+                  }
                   className="w-full rounded-2xl border border-white/10 bg-white/[0.045] py-3 pl-10 pr-4 text-sm outline-none transition placeholder:text-white/20 focus:border-blue-400/30 disabled:opacity-50"
                 />
               </div>
@@ -1315,22 +2478,126 @@ function TaskModal({
 
               <input
                 type="date"
-                value={dueDate}
-                onChange={(event) =>
+                value={
+                  dueDate
+                }
+                onChange={(
+                  event
+                ) =>
                   setDueDate(
-                    event.target.value
+                    event.target
+                      .value
                   )
                 }
-                disabled={saving}
+                disabled={
+                  saving
+                }
                 className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-4 py-3 text-sm outline-none focus:border-blue-400/30 disabled:opacity-50"
               />
+            </div>
+
+            {/* REMINDER */}
+
+            <div className="rounded-2xl border border-blue-400/10 bg-blue-500/[0.035] p-4">
+
+              <div className="flex items-center justify-between gap-4">
+
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-300">
+                    {reminderEnabled ? (
+                      <Bell
+                        size={18}
+                      />
+                    ) : (
+                      <BellOff
+                        size={18}
+                      />
+                    )}
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-medium">
+                      Task Reminder
+                    </p>
+
+                    <p className="mt-1 text-xs text-white/30">
+                      Get a phone notification
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() =>
+                    setReminderEnabled(
+                      (
+                        value
+                      ) =>
+                        !value
+                    )
+                  }
+                  className={`relative h-6 w-11 shrink-0 rounded-full transition ${
+                    reminderEnabled
+                      ? "bg-blue-500"
+                      : "bg-white/10"
+                  }`}
+                  aria-label="Toggle task reminder"
+                >
+                  <span
+                    className={`absolute left-1 top-1 h-4 w-4 rounded-full bg-white transition-transform ${
+                      reminderEnabled
+                        ? "translate-x-5"
+                        : ""
+                    }`}
+                  />
+                </button>
+
+              </div>
+
+              {reminderEnabled && (
+                <div className="mt-4">
+
+                  <label className="mb-2 block text-xs text-white/40">
+                    Reminder Time
+                  </label>
+
+                  <input
+                    type="time"
+                    value={
+                      reminderTime
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      setReminderTime(
+                        event
+                          .target
+                          .value
+                      )
+                    }
+                    disabled={
+                      saving
+                    }
+                    className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-4 py-3 text-sm outline-none focus:border-blue-400/30 disabled:opacity-50"
+                  />
+
+                  <p className="mt-2 text-[10px] text-white/20">
+                    Notification will be sent on the due date at this time.
+                  </p>
+
+                </div>
+              )}
+
             </div>
 
             {/* SUBMIT */}
 
             <button
               type="submit"
-              disabled={saving}
+              disabled={
+                saving
+              }
               className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-500 py-3.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-400 disabled:opacity-50"
             >
               {saving ? (
@@ -1339,6 +2606,7 @@ function TaskModal({
                     size={16}
                     className="animate-spin"
                   />
+
                   Saving...
                 </>
               ) : (

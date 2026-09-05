@@ -7,8 +7,8 @@ import {
   TrendingUp,
   Activity,
   CalendarDays,
-  X,
   Loader2,
+  Clock3,
 } from "lucide-react";
 
 import Loading from "../components/Loading";
@@ -16,29 +16,216 @@ import { db } from "../firebase/config";
 
 import {
   collection,
-  addDoc,
   deleteDoc,
   doc,
+  getDocsFromCache,
   onSnapshot,
   query,
   orderBy,
   serverTimestamp,
+  setDoc,
 } from "firebase/firestore";
 
-export default function Fitness({ user }) {
-  const [workouts, setWorkouts] = useState([]);
-  const [loading, setLoading] = useState(true);
+/* =========================================================
+   LOCAL STORAGE HELPERS
+========================================================= */
 
-  const [exercise, setExercise] = useState("");
-  const [sets, setSets] = useState("");
-  const [reps, setReps] = useState("");
+function getFitnessBackupKey(uid) {
+  return `my-dashboard-${uid}-fitness`;
+}
 
-  const [saving, setSaving] = useState(false);
-  const [deletingId, setDeletingId] = useState(null);
+function loadFitnessBackup(uid) {
+  if (!uid) return [];
 
-  // =========================================================
-  // FIRESTORE LIVE DATA
-  // =========================================================
+  try {
+    const raw = localStorage.getItem(
+      getFitnessBackupKey(uid)
+    );
+
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+
+    return Array.isArray(parsed)
+      ? parsed
+      : [];
+  } catch (error) {
+    console.warn(
+      "Could not load fitness backup:",
+      error
+    );
+
+    return [];
+  }
+}
+
+function saveFitnessBackup(uid, workouts) {
+  if (!uid) return;
+
+  try {
+    localStorage.setItem(
+      getFitnessBackupKey(uid),
+      JSON.stringify(workouts)
+    );
+  } catch (error) {
+    console.warn(
+      "Could not save fitness backup:",
+      error
+    );
+  }
+}
+
+/* =========================================================
+   DATE HELPERS
+========================================================= */
+
+function parseDate(value) {
+  if (!value) return null;
+
+  try {
+    if (
+      typeof value.toDate ===
+      "function"
+    ) {
+      return value.toDate();
+    }
+
+    if (
+      value instanceof Date
+    ) {
+      return value;
+    }
+
+    if (
+      typeof value === "object" &&
+      value.seconds !== undefined
+    ) {
+      return new Date(
+        Number(value.seconds) * 1000
+      );
+    }
+
+    if (
+      typeof value === "object" &&
+      value._seconds !== undefined
+    ) {
+      return new Date(
+        Number(value._seconds) * 1000
+      );
+    }
+
+    const date = new Date(value);
+
+    if (
+      Number.isNaN(
+        date.getTime()
+      )
+    ) {
+      return null;
+    }
+
+    return date;
+  } catch {
+    return null;
+  }
+}
+
+function getWorkoutTime(workout) {
+  const date =
+    parseDate(workout.createdAt);
+
+  return date
+    ? date.getTime()
+    : 0;
+}
+
+function sortWorkouts(workouts) {
+  return [...workouts].sort(
+    (a, b) =>
+      getWorkoutTime(b) -
+      getWorkoutTime(a)
+  );
+}
+
+/* =========================================================
+   WEEK HELPERS
+========================================================= */
+
+function isThisWeek(dateValue) {
+  const date =
+    parseDate(dateValue);
+
+  if (!date) return false;
+
+  const now = new Date();
+
+  const currentDay =
+    now.getDay();
+
+  const daysFromMonday =
+    currentDay === 0
+      ? 6
+      : currentDay - 1;
+
+  const startOfWeek =
+    new Date(now);
+
+  startOfWeek.setHours(
+    0,
+    0,
+    0,
+    0
+  );
+
+  startOfWeek.setDate(
+    now.getDate() -
+      daysFromMonday
+  );
+
+  const endOfWeek =
+    new Date(startOfWeek);
+
+  endOfWeek.setDate(
+    startOfWeek.getDate() + 7
+  );
+
+  return (
+    date >= startOfWeek &&
+    date < endOfWeek
+  );
+}
+
+/* =========================================================
+   FITNESS PAGE
+========================================================= */
+
+export default function Fitness({
+  user,
+}) {
+  const [workouts, setWorkouts] =
+    useState([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [exercise, setExercise] =
+    useState("");
+
+  const [sets, setSets] =
+    useState("");
+
+  const [reps, setReps] =
+    useState("");
+
+  const [saving, setSaving] =
+    useState(false);
+
+  const [deletingId, setDeletingId] =
+    useState(null);
+
+  /* =======================================================
+     FIRESTORE + LOCAL CACHE
+  ======================================================= */
 
   useEffect(() => {
     if (!user?.uid) {
@@ -47,185 +234,541 @@ export default function Fitness({ user }) {
       return;
     }
 
-    const workoutsRef = collection(
-      db,
-      "users",
-      user.uid,
-      "fitness"
-    );
+    let active = true;
 
-    const workoutsQuery = query(
-      workoutsRef,
-      orderBy("createdAt", "desc")
-    );
+    const uid = user.uid;
 
-    const unsubscribe = onSnapshot(
-      workoutsQuery,
-      (snapshot) => {
-        const data = snapshot.docs.map((item) => ({
-          id: item.id,
-          ...item.data(),
-        }));
+    const workoutsRef =
+      collection(
+        db,
+        "users",
+        uid,
+        "fitness"
+      );
 
-        setWorkouts(data);
+    const workoutsQuery =
+      query(
+        workoutsRef,
+        orderBy(
+          "createdAt",
+          "desc"
+        )
+      );
+
+    /* -----------------------------------------------------
+       LOAD LOCAL BACKUP IMMEDIATELY
+    ----------------------------------------------------- */
+
+    const localBackup =
+      loadFitnessBackup(uid);
+
+    if (
+      localBackup.length > 0
+    ) {
+      setWorkouts(
+        sortWorkouts(
+          localBackup
+        )
+      );
+
+      setLoading(false);
+    }
+
+    /* -----------------------------------------------------
+       TRY FIRESTORE CACHE
+    ----------------------------------------------------- */
+
+    getDocsFromCache(
+      workoutsQuery
+    )
+      .then((snapshot) => {
+        if (!active) return;
+
+        const cacheData =
+          snapshot.docs.map(
+            (item) => ({
+              id: item.id,
+              ...item.data(),
+            })
+          );
+
+        /*
+         * IMPORTANT:
+         * Do not replace existing local data
+         * with an empty offline cache.
+         */
+        if (
+          cacheData.length > 0
+        ) {
+          const sorted =
+            sortWorkouts(
+              cacheData
+            );
+
+          setWorkouts(sorted);
+          saveFitnessBackup(
+            uid,
+            sorted
+          );
+        } else if (
+          localBackup.length === 0
+        ) {
+          setWorkouts([]);
+        }
+
         setLoading(false);
-      },
-      (error) => {
-        console.error("Fitness Firestore Error:", error);
-        setLoading(false);
-      }
-    );
+      })
+      .catch(() => {
+        /*
+         * LocalStorage backup can still
+         * be used when Firestore cache
+         * is unavailable.
+         */
 
-    return () => unsubscribe();
+        if (!active) return;
+
+        if (
+          localBackup.length > 0
+        ) {
+          setWorkouts(
+            sortWorkouts(
+              localBackup
+            )
+          );
+        }
+
+        setLoading(false);
+      });
+
+    /* -----------------------------------------------------
+       LIVE FIRESTORE LISTENER
+    ----------------------------------------------------- */
+
+    const unsubscribe =
+      onSnapshot(
+        workoutsQuery,
+        {
+          includeMetadataChanges: true,
+        },
+        (snapshot) => {
+          if (!active) return;
+
+          const data =
+            snapshot.docs.map(
+              (item) => ({
+                id: item.id,
+                ...item.data(),
+              })
+            );
+
+          const sorted =
+            sortWorkouts(data);
+
+          /*
+           * If this is an empty cached snapshot,
+           * don't destroy existing local data.
+           */
+          if (
+            sorted.length === 0 &&
+            snapshot.metadata.fromCache &&
+            localBackup.length > 0
+          ) {
+            setLoading(false);
+            return;
+          }
+
+          setWorkouts(sorted);
+
+          /*
+           * Save data to local backup when:
+           * - data exists
+           * OR
+           * - snapshot came from server
+           */
+          if (
+            sorted.length > 0 ||
+            !snapshot.metadata.fromCache
+          ) {
+            saveFitnessBackup(
+              uid,
+              sorted
+            );
+          }
+
+          setLoading(false);
+        },
+        (error) => {
+          console.error(
+            "Fitness Firestore Error:",
+            error
+          );
+
+          if (!active) return;
+
+          const backup =
+            loadFitnessBackup(uid);
+
+          if (
+            backup.length > 0
+          ) {
+            setWorkouts(
+              sortWorkouts(
+                backup
+              )
+            );
+          }
+
+          setLoading(false);
+        }
+      );
+
+    /*
+     * Safety fallback.
+     * Prevents loading screen from staying forever.
+     */
+    const loadingTimeout =
+      setTimeout(() => {
+        if (!active) return;
+
+        setLoading(false);
+
+        const backup =
+          loadFitnessBackup(uid);
+
+        if (
+          backup.length > 0
+        ) {
+          setWorkouts(
+            sortWorkouts(
+              backup
+            )
+          );
+        }
+      }, 4000);
+
+    return () => {
+      active = false;
+
+      clearTimeout(
+        loadingTimeout
+      );
+
+      unsubscribe();
+    };
   }, [user?.uid]);
 
-  // =========================================================
-  // STATISTICS
-  // =========================================================
+  /* =========================================================
+     STATISTICS
+  ========================================================= */
 
   const statistics = useMemo(() => {
-    const totalWorkouts = workouts.length;
+    const totalWorkouts =
+      workouts.length;
 
-    const totalSets = workouts.reduce(
-      (sum, workout) =>
-        sum + Number(workout.sets || 0),
-      0
-    );
+    const totalSets =
+      workouts.reduce(
+        (sum, workout) =>
+          sum +
+          Number(
+            workout.sets || 0
+          ),
+        0
+      );
 
-    const totalReps = workouts.reduce(
-      (sum, workout) =>
-        sum +
-        Number(workout.sets || 0) *
-          Number(workout.reps || 0),
-      0
-    );
+    const totalReps =
+      workouts.reduce(
+        (sum, workout) =>
+          sum +
+          Number(
+            workout.sets || 0
+          ) *
+            Number(
+              workout.reps || 0
+            ),
+        0
+      );
 
-    const exercises = new Set(
-      workouts.map((workout) =>
-        String(workout.exercise || "")
-          .trim()
-          .toLowerCase()
-      )
-    );
+    const exercises =
+      new Set(
+        workouts.map(
+          (workout) =>
+            String(
+              workout.exercise || ""
+            )
+              .trim()
+              .toLowerCase()
+        )
+      );
 
     return {
       totalWorkouts,
       totalSets,
       totalReps,
-      exercises: exercises.size,
+      exercises:
+        exercises.size,
     };
   }, [workouts]);
 
-  // =========================================================
-  // ADD WORKOUT
-  // =========================================================
+  /* =========================================================
+     THIS WEEK STATISTICS
+  ========================================================= */
 
-  const addWorkout = async (event) => {
+  const weeklyStatistics =
+    useMemo(() => {
+      const weeklyWorkouts =
+        workouts.filter(
+          (workout) =>
+            isThisWeek(
+              workout.createdAt
+            )
+        );
+
+      const weeklySets =
+        weeklyWorkouts.reduce(
+          (sum, workout) =>
+            sum +
+            Number(
+              workout.sets || 0
+            ),
+          0
+        );
+
+      const weeklyReps =
+        weeklyWorkouts.reduce(
+          (sum, workout) =>
+            sum +
+            Number(
+              workout.sets || 0
+            ) *
+              Number(
+                workout.reps || 0
+              ),
+          0
+        );
+
+      return {
+        workouts:
+          weeklyWorkouts.length,
+        sets: weeklySets,
+        reps: weeklyReps,
+      };
+    }, [workouts]);
+
+  /* =========================================================
+     ADD WORKOUT
+  ========================================================= */
+
+  const addWorkout = async (
+    event
+  ) => {
     event.preventDefault();
 
     if (!user?.uid) {
-      alert("Please login first.");
+      alert(
+        "Please login first."
+      );
       return;
     }
 
-    const exerciseName = exercise.trim();
-    const setsValue = Number(sets);
-    const repsValue = Number(reps);
+    const exerciseName =
+      exercise.trim();
+
+    const setsValue =
+      Number(sets);
+
+    const repsValue =
+      Number(reps);
 
     if (!exerciseName) {
-      alert("Please enter an exercise.");
+      alert(
+        "Please enter an exercise."
+      );
       return;
     }
 
     if (
-      !Number.isFinite(setsValue) ||
+      !Number.isFinite(
+        setsValue
+      ) ||
       setsValue <= 0
     ) {
-      alert("Please enter valid sets.");
+      alert(
+        "Please enter valid sets."
+      );
       return;
     }
 
     if (
-      !Number.isFinite(repsValue) ||
+      !Number.isFinite(
+        repsValue
+      ) ||
       repsValue <= 0
     ) {
-      alert("Please enter valid reps.");
+      alert(
+        "Please enter valid reps."
+      );
       return;
     }
 
     setSaving(true);
 
-    try {
-      await addDoc(
-        collection(
-          db,
-          "users",
-          user.uid,
-          "fitness"
-        ),
-        {
-          exercise: exerciseName,
-          sets: setsValue,
-          reps: repsValue,
-          createdAt: serverTimestamp(),
-        }
+    const workoutsRef =
+      collection(
+        db,
+        "users",
+        user.uid,
+        "fitness"
       );
 
-      setExercise("");
-      setSets("");
-      setReps("");
-    } catch (error) {
+    /*
+     * Generate ID locally.
+     * This allows the workout to appear
+     * immediately even when offline.
+     */
+    const workoutRef =
+      doc(workoutsRef);
+
+    const workoutId =
+      workoutRef.id;
+
+    const localWorkout = {
+      id: workoutId,
+      exercise: exerciseName,
+      sets: setsValue,
+      reps: repsValue,
+      createdAt:
+        new Date().toISOString(),
+    };
+
+    /*
+     * OPTIMISTIC UI
+     */
+    setWorkouts((current) => {
+      const updated =
+        sortWorkouts([
+          localWorkout,
+          ...current.filter(
+            (item) =>
+              item.id !==
+              workoutId
+          ),
+        ]);
+
+      saveFitnessBackup(
+        user.uid,
+        updated
+      );
+
+      return updated;
+    });
+
+    /*
+     * Clear form immediately.
+     */
+    setExercise("");
+    setSets("");
+    setReps("");
+    setSaving(false);
+
+    /*
+     * FIRESTORE WRITE
+     *
+     * Do not await this.
+     * Firestore will queue the write
+     * when offline.
+     */
+    void setDoc(
+      workoutRef,
+      {
+        exercise:
+          exerciseName,
+        sets: setsValue,
+        reps: repsValue,
+        createdAt:
+          serverTimestamp(),
+      }
+    ).catch((error) => {
       console.error(
         "Saving workout failed:",
         error
       );
 
-      alert("Could not save workout.");
-    } finally {
-      setSaving(false);
-    }
+      /*
+       * Keep local data.
+       * It can still be available
+       * through the local backup.
+       */
+    });
   };
 
-  // =========================================================
-  // DELETE WORKOUT
-  // =========================================================
+  /* =========================================================
+     DELETE WORKOUT
+  ========================================================= */
 
-  const deleteWorkout = async (id) => {
+  const deleteWorkout = async (
+    id
+  ) => {
     if (!user?.uid) return;
 
-    const confirmed = window.confirm(
-      "Delete this workout?\n\nThis action cannot be undone."
-    );
+    const confirmed =
+      window.confirm(
+        "Delete this workout?\n\nThis action cannot be undone."
+      );
 
     if (!confirmed) return;
 
     setDeletingId(id);
 
-    try {
-      await deleteDoc(
-        doc(
-          db,
-          "users",
-          user.uid,
-          "fitness",
-          id
-        )
+    /*
+     * OPTIMISTIC DELETE
+     */
+    setWorkouts((current) => {
+      const updated =
+        current.filter(
+          (item) =>
+            item.id !== id
+        );
+
+      saveFitnessBackup(
+        user.uid,
+        updated
       );
-    } catch (error) {
+
+      return updated;
+    });
+
+    setDeletingId(null);
+
+    /*
+     * Firestore delete.
+     *
+     * Do not await so the UI does not
+     * get stuck while offline.
+     */
+    void deleteDoc(
+      doc(
+        db,
+        "users",
+        user.uid,
+        "fitness",
+        id
+      )
+    ).catch((error) => {
       console.error(
         "Delete workout failed:",
         error
       );
 
-      alert("Could not delete workout.");
-    } finally {
-      setDeletingId(null);
-    }
+      /*
+       * Firestore offline persistence
+       * will retry when connection returns.
+       */
+    });
   };
 
-  // =========================================================
-  // LOADING
-  // =========================================================
+  /* =========================================================
+     LOADING
+  ========================================================= */
 
   if (loading) {
     return (
@@ -233,9 +776,9 @@ export default function Fitness({ user }) {
     );
   }
 
-  // =========================================================
-  // UI
-  // =========================================================
+  /* =========================================================
+     UI
+  ========================================================= */
 
   return (
     <div className="min-h-screen pb-24 text-white sm:pb-0">
@@ -279,32 +822,109 @@ export default function Fitness({ user }) {
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
 
         <StatCard
-          icon={<Activity size={18} />}
+          icon={
+            <Activity size={18} />
+          }
           title="Workouts"
-          value={statistics.totalWorkouts}
+          value={
+            statistics.totalWorkouts
+          }
           iconClass="bg-blue-500/10 text-blue-300"
         />
 
         <StatCard
-          icon={<Dumbbell size={18} />}
+          icon={
+            <Dumbbell size={18} />
+          }
           title="Total Sets"
-          value={statistics.totalSets}
+          value={
+            statistics.totalSets
+          }
           iconClass="bg-blue-500/10 text-blue-300"
         />
 
         <StatCard
-          icon={<TrendingUp size={18} />}
+          icon={
+            <TrendingUp size={18} />
+          }
           title="Total Reps"
-          value={statistics.totalReps}
+          value={
+            statistics.totalReps
+          }
           iconClass="bg-green-500/10 text-green-300"
         />
 
         <StatCard
-          icon={<CalendarDays size={18} />}
+          icon={
+            <CalendarDays size={18} />
+          }
           title="Exercises"
-          value={statistics.exercises}
+          value={
+            statistics.exercises
+          }
           iconClass="bg-green-500/10 text-green-300"
         />
+
+      </div>
+
+      {/* =====================================================
+          THIS WEEK UPDATE
+      ====================================================== */}
+
+      <div className="mb-6 rounded-3xl border border-blue-400/10 bg-blue-500/[0.035] p-5 shadow-xl shadow-black/10 backdrop-blur-2xl">
+
+        <div className="mb-5 flex items-center justify-between gap-4">
+
+          <div>
+
+            <div className="flex items-center gap-2">
+
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-blue-400/10 bg-blue-500/10 text-blue-300">
+                <Clock3 size={17} />
+              </div>
+
+              <h2 className="font-semibold">
+                This Week
+              </h2>
+
+            </div>
+
+            <p className="mt-2 text-xs text-white/30">
+              Your training activity this week
+            </p>
+
+          </div>
+
+          <span className="rounded-xl border border-blue-400/10 bg-blue-500/10 px-3 py-2 text-xs text-blue-300/70">
+            Mon - Sun
+          </span>
+
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+
+          <WeeklyValue
+            label="Workouts"
+            value={
+              weeklyStatistics.workouts
+            }
+          />
+
+          <WeeklyValue
+            label="Sets"
+            value={
+              weeklyStatistics.sets
+            }
+          />
+
+          <WeeklyValue
+            label="Reps"
+            value={
+              weeklyStatistics.reps
+            }
+          />
+
+        </div>
 
       </div>
 
@@ -525,12 +1145,39 @@ function StatCard({
           </p>
 
           <p className="mt-1 text-xl font-bold">
-            {Number(value).toLocaleString()}
+            {Number(
+              value
+            ).toLocaleString()}
           </p>
 
         </div>
 
       </div>
+
+    </div>
+  );
+}
+
+/* ===========================================================
+   WEEKLY VALUE
+=========================================================== */
+
+function WeeklyValue({
+  label,
+  value,
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-3 text-center">
+
+      <p className="text-[10px] uppercase tracking-wider text-white/25">
+        {label}
+      </p>
+
+      <p className="mt-1 text-lg font-bold text-white">
+        {Number(
+          value
+        ).toLocaleString()}
+      </p>
 
     </div>
   );
@@ -546,11 +1193,17 @@ function WorkoutCard({
   deleting,
 }) {
   const totalReps =
-    Number(workout.sets || 0) *
-    Number(workout.reps || 0);
+    Number(
+      workout.sets || 0
+    ) *
+    Number(
+      workout.reps || 0
+    );
 
   const createdDate =
-    formatTimestamp(workout.createdAt);
+    formatTimestamp(
+      workout.createdAt
+    );
 
   return (
     <div className="group rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-lg shadow-black/5 backdrop-blur-2xl transition hover:border-blue-400/20 hover:bg-white/[0.055]">
@@ -609,12 +1262,16 @@ function WorkoutCard({
 
         <WorkoutValue
           label="Sets"
-          value={workout.sets || 0}
+          value={
+            workout.sets || 0
+          }
         />
 
         <WorkoutValue
           label="Reps"
-          value={workout.reps || 0}
+          value={
+            workout.reps || 0
+          }
         />
 
         <WorkoutValue
@@ -666,7 +1323,9 @@ function WorkoutValue({
             : "text-white"
         }`}
       >
-        {Number(value).toLocaleString()}
+        {Number(
+          value
+        ).toLocaleString()}
       </p>
 
     </div>
@@ -701,28 +1360,16 @@ function EmptyFitness() {
    DATE FORMAT
 =========================================================== */
 
-function formatTimestamp(timestamp) {
+function formatTimestamp(
+  timestamp
+) {
   if (!timestamp) return "";
 
   try {
-    let date;
+    const date =
+      parseDate(timestamp);
 
-    if (
-      typeof timestamp.toDate ===
-      "function"
-    ) {
-      date = timestamp.toDate();
-    } else {
-      date = new Date(timestamp);
-    }
-
-    if (
-      Number.isNaN(
-        date.getTime()
-      )
-    ) {
-      return "";
-    }
+    if (!date) return "";
 
     return new Intl.DateTimeFormat(
       "en-LK",

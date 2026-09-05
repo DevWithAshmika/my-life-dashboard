@@ -1,4 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import {
   Wallet,
@@ -16,6 +20,7 @@ import {
   ChevronRight,
   CircleCheck,
   Sparkles,
+  Activity,
 } from "lucide-react";
 
 import {
@@ -37,32 +42,135 @@ import {
 import { db } from "../firebase/config";
 import Loading from "../components/Loading";
 
+/*
+|--------------------------------------------------------------------------
+| Local Backup Helpers
+|--------------------------------------------------------------------------
+*/
+
+const getLocalKey = (
+  uid,
+  collectionName
+) =>
+  `my-dashboard-${uid}-${collectionName}`;
+
+const loadLocalBackup = (
+  uid,
+  collectionName
+) => {
+  try {
+    const key = getLocalKey(
+      uid,
+      collectionName
+    );
+
+    const saved =
+      localStorage.getItem(key);
+
+    if (!saved) {
+      return [];
+    }
+
+    const parsed =
+      JSON.parse(saved);
+
+    return Array.isArray(parsed)
+      ? parsed
+      : [];
+  } catch (error) {
+    console.warn(
+      `Dashboard local backup read error for ${collectionName}:`,
+      error
+    );
+
+    return [];
+  }
+};
+
+const saveLocalBackup = (
+  uid,
+  collectionName,
+  items
+) => {
+  try {
+    const key = getLocalKey(
+      uid,
+      collectionName
+    );
+
+    localStorage.setItem(
+      key,
+      JSON.stringify(items)
+    );
+  } catch (error) {
+    console.warn(
+      `Dashboard local backup save error for ${collectionName}:`,
+      error
+    );
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
+| Dashboard
+|--------------------------------------------------------------------------
+*/
+
 export default function Dashboard({
   user,
   setActivePage,
   darkMode = true,
 }) {
-  const [data, setData] = useState({
-    finance: [],
-    tasks: [],
-    goals: [],
-    habits: [],
-    fitness: [],
-    calendar: [],
-    travel: [],
-    notes: [],
-  });
+  const [data, setData] =
+    useState({
+      finance: [],
+      tasks: [],
+      goals: [],
+      habits: [],
+      fitness: [],
+      calendar: [],
+      travel: [],
+      notes: [],
+    });
 
-  const [preferences, setPreferences] = useState({
-    showFinance: true,
-    showTasks: true,
-    showGoals: true,
-    showHabits: true,
-    showFitness: true,
-    showTravel: true,
-  });
+  const [preferences, setPreferences] =
+    useState({
+      showFinance: true,
+      showTasks: true,
+      showGoals: true,
+      showHabits: true,
+      showFitness: true,
+      showTravel: true,
+    });
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] =
+    useState(true);
+
+  /*
+  |--------------------------------------------------------------------------
+  | Theme
+  |--------------------------------------------------------------------------
+  */
+
+  const theme = darkMode
+    ? {
+        page: "text-white",
+        card: "border-white/[0.07] bg-white/[0.025]",
+        inner: "border-white/[0.06] bg-white/[0.025]",
+        title: "text-white/90",
+        text: "text-white/60",
+        muted: "text-white/30",
+        faint: "text-white/20",
+      }
+    : {
+        page: "text-slate-900",
+        card: "border-slate-200 bg-white/75",
+        inner: "border-slate-200 bg-slate-50/70",
+        title: "text-slate-900",
+        text: "text-slate-600",
+        muted: "text-slate-400",
+        faint: "text-slate-300",
+      };
 
   /*
   |--------------------------------------------------------------------------
@@ -70,20 +178,52 @@ export default function Dashboard({
   |--------------------------------------------------------------------------
   */
 
-  const goToPage = (page) => {
-    if (typeof setActivePage === "function") {
+  const goToPage = (
+    page
+  ) => {
+    if (
+      typeof setActivePage ===
+      "function"
+    ) {
       setActivePage(page);
     }
   };
 
   /*
   |--------------------------------------------------------------------------
-  | Firestore Live Data
+  | Firestore + Offline Data
+  |--------------------------------------------------------------------------
+  |
+  | Optimized:
+  |
+  | 1. LocalStorage is loaded immediately.
+  | 2. getDocsFromCache() is removed.
+  | 3. Firestore onSnapshot() handles cached data.
+  | 4. No 4-second artificial loading delay.
+  | 5. Local backup is kept in memory to avoid repeated reads.
+  |
   |--------------------------------------------------------------------------
   */
 
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!user?.uid) {
+      setData({
+        finance: [],
+        tasks: [],
+        goals: [],
+        habits: [],
+        fitness: [],
+        calendar: [],
+        travel: [],
+        notes: [],
+      });
+
+      setLoading(false);
+
+      return;
+    }
+
+    let isMounted = true;
 
     const collectionNames = [
       "finance",
@@ -96,50 +236,261 @@ export default function Dashboard({
       "notes",
     ];
 
-    const unsubscribers = collectionNames.map(
+    /*
+    |--------------------------------------------------------------------------
+    | Load Local Backups Immediately
+    |--------------------------------------------------------------------------
+    */
+
+    const localData = {};
+
+    collectionNames.forEach(
       (collectionName) => {
-        const ref = collection(
-          db,
-          "users",
+        localData[
+          collectionName
+        ] = loadLocalBackup(
           user.uid,
           collectionName
-        );
-
-        return onSnapshot(
-          ref,
-          (snapshot) => {
-            const items = snapshot.docs.map(
-              (item) => ({
-                id: item.id,
-                ...item.data(),
-              })
-            );
-
-            setData((previous) => ({
-              ...previous,
-              [collectionName]: items,
-            }));
-
-            setLoading(false);
-          },
-          (error) => {
-            console.error(
-              `Error loading ${collectionName}:`,
-              error
-            );
-
-            setLoading(false);
-          }
         );
       }
     );
 
+    /*
+    |--------------------------------------------------------------------------
+    | Show Local Data Immediately
+    |--------------------------------------------------------------------------
+    */
+
+    const hasAnyLocalData =
+      Object.values(
+        localData
+      ).some(
+        (items) =>
+          Array.isArray(items) &&
+          items.length > 0
+      );
+
+    if (hasAnyLocalData) {
+      setData((previous) => ({
+        ...previous,
+        ...localData,
+      }));
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Dashboard does not wait for Firestore.
+    |--------------------------------------------------------------------------
+    */
+
+    setLoading(false);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Firestore Listeners
+    |--------------------------------------------------------------------------
+    */
+
+    const unsubscribers = [];
+
+    collectionNames.forEach(
+      (collectionName) => {
+        const ref =
+          collection(
+            db,
+            "users",
+            user.uid,
+            collectionName
+          );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Live Listener
+        |--------------------------------------------------------------------------
+        */
+
+        const unsubscribe =
+          onSnapshot(
+            ref,
+            {
+              includeMetadataChanges: true,
+            },
+            (snapshot) => {
+              if (!isMounted) {
+                return;
+              }
+
+              const items =
+                snapshot.docs.map(
+                  (item) => ({
+                    id: item.id,
+                    ...item.data(),
+                  })
+                );
+
+              /*
+              |--------------------------------------------------------------------------
+              | Offline Empty Snapshot Protection
+              |--------------------------------------------------------------------------
+              */
+
+              if (
+                items.length === 0 &&
+                snapshot.metadata
+                  .fromCache &&
+                localData[
+                  collectionName
+                ]?.length > 0
+              ) {
+                const backup =
+                  localData[
+                    collectionName
+                  ];
+
+                setData(
+                  (previous) => {
+                    const existing =
+                      previous[
+                        collectionName
+                      ] || [];
+
+                    if (
+                      existing.length >
+                      0
+                    ) {
+                      return previous;
+                    }
+
+                    return {
+                      ...previous,
+                      [collectionName]:
+                        backup,
+                    };
+                  }
+                );
+
+                console.log(
+                  `My Dashboard: kept local ${collectionName} because offline cache snapshot was empty`
+                );
+
+                return;
+              }
+
+              /*
+              |--------------------------------------------------------------------------
+              | Update Data
+              |--------------------------------------------------------------------------
+              */
+
+              setData(
+                (previous) => ({
+                  ...previous,
+                  [collectionName]:
+                    items,
+                })
+              );
+
+              /*
+              |--------------------------------------------------------------------------
+              | Update In-Memory Backup
+              |--------------------------------------------------------------------------
+              */
+
+              localData[
+                collectionName
+              ] = items;
+
+              /*
+              |--------------------------------------------------------------------------
+              | Save Backup
+              |--------------------------------------------------------------------------
+              |
+              | Save non-empty data OR confirmed server data.
+              |
+              */
+
+              if (
+                items.length > 0 ||
+                !snapshot.metadata
+                  .fromCache
+              ) {
+                saveLocalBackup(
+                  user.uid,
+                  collectionName,
+                  items
+                );
+              }
+
+              console.log(
+                `My Dashboard ${collectionName}:`,
+                {
+                  count:
+                    items.length,
+
+                  fromCache:
+                    snapshot.metadata
+                      .fromCache,
+
+                  pendingWrites:
+                    snapshot.metadata
+                      .hasPendingWrites,
+                }
+              );
+            },
+            (error) => {
+              console.error(
+                `Dashboard ${collectionName} listener error:`,
+                error
+              );
+
+              if (!isMounted) {
+                return;
+              }
+
+              const backup =
+                localData[
+                  collectionName
+                ] || [];
+
+              if (
+                backup.length > 0
+              ) {
+                setData(
+                  (previous) => ({
+                    ...previous,
+                    [collectionName]:
+                      backup,
+                  })
+                );
+              }
+            }
+          );
+
+        unsubscribers.push(
+          unsubscribe
+        );
+      }
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Cleanup
+    |--------------------------------------------------------------------------
+    */
+
     return () => {
-      unsubscribers.forEach((unsubscribe) => {
-        if (typeof unsubscribe === "function") {
-          unsubscribe();
+      isMounted = false;
+
+      unsubscribers.forEach(
+        (unsubscribe) => {
+          if (
+            typeof unsubscribe ===
+            "function"
+          ) {
+            unsubscribe();
+          }
         }
-      });
+      );
     };
   }, [user?.uid]);
 
@@ -150,7 +501,9 @@ export default function Dashboard({
   */
 
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!user?.uid) {
+      return;
+    }
 
     const ref = doc(
       db,
@@ -160,42 +513,116 @@ export default function Dashboard({
       "preferences"
     );
 
-    const unsubscribe = onSnapshot(
-      ref,
-      (snapshot) => {
-        if (!snapshot.exists()) return;
+    const preferenceKey =
+      `my-dashboard-${user.uid}-preferences`;
 
-        const settings = snapshot.data();
+    /*
+    |--------------------------------------------------------------------------
+    | Local Preferences First
+    |--------------------------------------------------------------------------
+    */
 
-        setPreferences({
-          showFinance:
-            settings.showFinance !== false,
+    try {
+      const saved =
+        localStorage.getItem(
+          preferenceKey
+        );
 
-          showTasks:
-            settings.showTasks !== false,
+      if (saved) {
+        const parsed =
+          JSON.parse(saved);
 
-          showGoals:
-            settings.showGoals !== false,
-
-          showHabits:
-            settings.showHabits !== false,
-
-          showFitness:
-            settings.showFitness !== false,
-
-          showTravel:
-            settings.showTravel !== false,
-        });
-      },
-      (error) => {
-        console.error(
-          "Preferences error:",
-          error
+        setPreferences(
+          (previous) => ({
+            ...previous,
+            ...parsed,
+          })
         );
       }
-    );
+    } catch (error) {
+      console.warn(
+        "Dashboard preferences local read error:",
+        error
+      );
+    }
 
-    return () => unsubscribe();
+    /*
+    |--------------------------------------------------------------------------
+    | Firestore Preferences
+    |--------------------------------------------------------------------------
+    */
+
+    const unsubscribe =
+      onSnapshot(
+        ref,
+        {
+          includeMetadataChanges: true,
+        },
+        (snapshot) => {
+          if (
+            !snapshot.exists()
+          ) {
+            return;
+          }
+
+          const settings =
+            snapshot.data();
+
+          const nextPreferences =
+            {
+              showFinance:
+                settings.showFinance !==
+                false,
+
+              showTasks:
+                settings.showTasks !==
+                false,
+
+              showGoals:
+                settings.showGoals !==
+                false,
+
+              showHabits:
+                settings.showHabits !==
+                false,
+
+              showFitness:
+                settings.showFitness !==
+                false,
+
+              showTravel:
+                settings.showTravel !==
+                false,
+            };
+
+          setPreferences(
+            nextPreferences
+          );
+
+          try {
+            localStorage.setItem(
+              preferenceKey,
+              JSON.stringify(
+                nextPreferences
+              )
+            );
+          } catch (error) {
+            console.warn(
+              "Dashboard preferences local save error:",
+              error
+            );
+          }
+        },
+        (error) => {
+          console.error(
+            "Dashboard preferences error:",
+            error
+          );
+        }
+      );
+
+    return () =>
+      unsubscribe();
   }, [user?.uid]);
 
   /*
@@ -206,36 +633,66 @@ export default function Dashboard({
 
   const today = new Date();
 
-  const startOfToday = new Date(today);
-  startOfToday.setHours(0, 0, 0, 0);
+  const startOfToday =
+    new Date(today);
 
-  const endOfToday = new Date(today);
-  endOfToday.setHours(23, 59, 59, 999);
-
-  const startOfMonth = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    1
+  startOfToday.setHours(
+    0,
+    0,
+    0,
+    0
   );
 
-  const startOfNextMonth = new Date(
-    today.getFullYear(),
-    today.getMonth() + 1,
-    1
+  const endOfToday =
+    new Date(today);
+
+  endOfToday.setHours(
+    23,
+    59,
+    59,
+    999
   );
 
-  const sevenDaysAgo = new Date(today);
-  sevenDaysAgo.setDate(today.getDate() - 6);
-  sevenDaysAgo.setHours(0, 0, 0, 0);
+  const startOfMonth =
+    new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      1
+    );
+
+  const startOfNextMonth =
+    new Date(
+      today.getFullYear(),
+      today.getMonth() + 1,
+      1
+    );
+
+  const sevenDaysAgo =
+    new Date(today);
+
+  sevenDaysAgo.setDate(
+    today.getDate() - 6
+  );
+
+  sevenDaysAgo.setHours(
+    0,
+    0,
+    0,
+    0
+  );
 
   /*
   |--------------------------------------------------------------------------
-  | Money
+  | Money Formatter
   |--------------------------------------------------------------------------
   */
 
-  const formatMoney = (value) => {
-    return `Rs. ${Number(value || 0).toLocaleString(
+  const formatMoney = (
+    value
+  ) => {
+    return `Rs. ${Number(
+      value || 0
+    ).toLocaleString(
       "en-LK",
       {
         minimumFractionDigits: 2,
@@ -250,153 +707,221 @@ export default function Dashboard({
   |--------------------------------------------------------------------------
   */
 
-  const financeStats = useMemo(() => {
-    const finance = data.finance || [];
+  const financeStats =
+    useMemo(() => {
+      const finance =
+        data.finance || [];
 
-    const monthly = finance.filter((item) => {
-      const date = parseDate(item.date);
-
-      return (
-        date &&
-        date >= startOfMonth &&
-        date < startOfNextMonth
-      );
-    });
-
-    const income = monthly
-      .filter(
-        (item) =>
-          String(item.type || "").toLowerCase() ===
-          "income"
-      )
-      .reduce(
-        (sum, item) =>
-          sum + Number(item.amount || 0),
-        0
-      );
-
-    const expense = monthly
-      .filter(
-        (item) =>
-          String(item.type || "").toLowerCase() ===
-          "expense"
-      )
-      .reduce(
-        (sum, item) =>
-          sum + Number(item.amount || 0),
-        0
-      );
-
-    const totalIncome = finance
-      .filter(
-        (item) =>
-          String(item.type || "").toLowerCase() ===
-          "income"
-      )
-      .reduce(
-        (sum, item) =>
-          sum + Number(item.amount || 0),
-        0
-      );
-
-    const totalExpense = finance
-      .filter(
-        (item) =>
-          String(item.type || "").toLowerCase() ===
-          "expense"
-      )
-      .reduce(
-        (sum, item) =>
-          sum + Number(item.amount || 0),
-        0
-      );
-
-    return {
-      income,
-      expense,
-      balance: income - expense,
-      totalIncome,
-      totalExpense,
-      totalBalance:
-        totalIncome - totalExpense,
-    };
-  }, [data.finance]);
-
-  /*
-  |--------------------------------------------------------------------------
-  | 7 Day Finance
-  |--------------------------------------------------------------------------
-  */
-
-  const last7Days = useMemo(() => {
-    const finance = data.finance || [];
-
-    return Array.from(
-      { length: 7 },
-      (_, index) => {
-        const date = new Date(sevenDaysAgo);
-
-        date.setDate(
-          sevenDaysAgo.getDate() + index
-        );
-
-        const nextDate = new Date(date);
-
-        nextDate.setDate(
-          date.getDate() + 1
-        );
-
-        const daily = finance.filter(
+      const monthly =
+        finance.filter(
           (item) => {
-            const itemDate = parseDate(
-              item.date
-            );
+            const date =
+              parseDate(
+                item.date
+              );
 
             return (
-              itemDate &&
-              itemDate >= date &&
-              itemDate < nextDate
+              date &&
+              date >=
+                startOfMonth &&
+              date <
+                startOfNextMonth
             );
           }
         );
 
-        const income = daily
+      const income =
+        monthly
           .filter(
             (item) =>
-              String(item.type || "").toLowerCase() ===
+              String(
+                item.type || ""
+              ).toLowerCase() ===
               "income"
           )
           .reduce(
             (sum, item) =>
-              sum + Number(item.amount || 0),
+              sum +
+              Number(
+                item.amount ||
+                  0
+              ),
             0
           );
 
-        const expense = daily
+      const expense =
+        monthly
           .filter(
             (item) =>
-              String(item.type || "").toLowerCase() ===
+              String(
+                item.type || ""
+              ).toLowerCase() ===
               "expense"
           )
           .reduce(
             (sum, item) =>
-              sum + Number(item.amount || 0),
+              sum +
+              Number(
+                item.amount ||
+                  0
+              ),
             0
           );
 
-        return {
-          name: date.toLocaleDateString(
-            "en-US",
-            {
-              weekday: "short",
-            }
-          ),
-          income,
+      const totalIncome =
+        finance
+          .filter(
+            (item) =>
+              String(
+                item.type || ""
+              ).toLowerCase() ===
+              "income"
+          )
+          .reduce(
+            (sum, item) =>
+              sum +
+              Number(
+                item.amount ||
+                  0
+              ),
+            0
+          );
+
+      const totalExpense =
+        finance
+          .filter(
+            (item) =>
+              String(
+                item.type || ""
+              ).toLowerCase() ===
+              "expense"
+          )
+          .reduce(
+            (sum, item) =>
+              sum +
+              Number(
+                item.amount ||
+                  0
+              ),
+            0
+          );
+
+      return {
+        income,
+        expense,
+        balance:
+          income -
           expense,
-        };
-      }
-    );
-  }, [data.finance]);
+        totalIncome,
+        totalExpense,
+        totalBalance:
+          totalIncome -
+          totalExpense,
+      };
+    }, [data.finance]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | Last 7 Days
+  |--------------------------------------------------------------------------
+  */
+
+  const last7Days =
+    useMemo(() => {
+      const finance =
+        data.finance || [];
+
+      return Array.from(
+        { length: 7 },
+        (_, index) => {
+          const date =
+            new Date(
+              sevenDaysAgo
+            );
+
+          date.setDate(
+            sevenDaysAgo.getDate() +
+              index
+          );
+
+          const nextDate =
+            new Date(date);
+
+          nextDate.setDate(
+            date.getDate() + 1
+          );
+
+          const daily =
+            finance.filter(
+              (item) => {
+                const itemDate =
+                  parseDate(
+                    item.date
+                  );
+
+                return (
+                  itemDate &&
+                  itemDate >=
+                    date &&
+                  itemDate <
+                    nextDate
+                );
+              }
+            );
+
+          const income =
+            daily
+              .filter(
+                (item) =>
+                  String(
+                    item.type || ""
+                  ).toLowerCase() ===
+                  "income"
+              )
+              .reduce(
+                (sum, item) =>
+                  sum +
+                  Number(
+                    item.amount ||
+                      0
+                  ),
+                0
+              );
+
+          const expense =
+            daily
+              .filter(
+                (item) =>
+                  String(
+                    item.type || ""
+                  ).toLowerCase() ===
+                  "expense"
+              )
+              .reduce(
+                (sum, item) =>
+                  sum +
+                  Number(
+                    item.amount ||
+                      0
+                  ),
+                0
+              );
+
+          return {
+            name:
+              date.toLocaleDateString(
+                "en-US",
+                {
+                  weekday:
+                    "short",
+                }
+              ),
+            income,
+            expense,
+          };
+        }
+      );
+    }, [data.finance]);
 
   /*
   |--------------------------------------------------------------------------
@@ -404,40 +929,60 @@ export default function Dashboard({
   |--------------------------------------------------------------------------
   */
 
-  const expenseBreakdown = useMemo(() => {
-    const grouped = {};
+  const expenseBreakdown =
+    useMemo(() => {
+      const grouped = {};
 
-    (data.finance || [])
-      .filter((item) => {
-        const date = parseDate(item.date);
+      (data.finance || [])
+        .filter((item) => {
+          const date =
+            parseDate(
+              item.date
+            );
 
-        return (
-          date &&
-          date >= startOfMonth &&
-          date < startOfNextMonth &&
-          String(item.type || "").toLowerCase() ===
-            "expense"
-        );
-      })
-      .forEach((item) => {
-        const category =
-          item.category ||
-          item.description ||
-          "Other";
+          return (
+            date &&
+            date >=
+              startOfMonth &&
+            date <
+              startOfNextMonth &&
+            String(
+              item.type || ""
+            ).toLowerCase() ===
+              "expense"
+          );
+        })
+        .forEach((item) => {
+          const category =
+            item.category ||
+            item.description ||
+            "Other";
 
-        grouped[category] =
-          (grouped[category] || 0) +
-          Number(item.amount || 0);
-      });
+          grouped[category] =
+            (grouped[category] ||
+              0) +
+            Number(
+              item.amount ||
+                0
+            );
+        });
 
-    return Object.entries(grouped)
-      .map(([name, value]) => ({
-        name,
-        value,
-      }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 6);
-  }, [data.finance]);
+      return Object.entries(
+        grouped
+      )
+        .map(
+          ([name, value]) => ({
+            name,
+            value,
+          })
+        )
+        .sort(
+          (a, b) =>
+            b.value -
+            a.value
+        )
+        .slice(0, 6);
+    }, [data.finance]);
 
   /*
   |--------------------------------------------------------------------------
@@ -445,47 +990,69 @@ export default function Dashboard({
   |--------------------------------------------------------------------------
   */
 
-  const taskStats = useMemo(() => {
-    const tasks = data.tasks || [];
+  const taskStats =
+    useMemo(() => {
+      const tasks =
+        data.tasks || [];
 
-    const completed = tasks.filter(
-      (task) =>
-        task.completed === true ||
-        task.status === "completed" ||
-        task.status === "done"
-    ).length;
+      const completed =
+        tasks.filter(
+          (task) =>
+            task.completed ===
+              true ||
+            task.status ===
+              "completed" ||
+            task.status ===
+              "done"
+        ).length;
 
-    const todayTasks = tasks
-      .filter((task) => {
-        if (
-          task.completed === true ||
-          task.status === "completed" ||
-          task.status === "done"
-        ) {
-          return false;
-        }
+      const todayTasks =
+        tasks
+          .filter((task) => {
+            if (
+              task.completed ===
+                true ||
+              task.status ===
+                "completed" ||
+              task.status ===
+                "done"
+            ) {
+              return false;
+            }
 
-        const date = parseDate(
-          task.dueDate ||
-            task.date ||
-            task.deadline
-        );
+            const date =
+              parseDate(
+                task.dueDate ||
+                  task.date ||
+                  task.deadline
+              );
 
-        return (
-          date &&
-          date >= startOfToday &&
-          date <= endOfToday
-        );
-      })
-      .slice(0, 5);
+            return (
+              date &&
+              date >=
+                startOfToday &&
+              date <=
+                endOfToday
+            );
+          })
+          .slice(0, 5);
 
-    return {
-      total: tasks.length,
-      completed,
-      pending: tasks.length - completed,
-      todayTasks,
-    };
-  }, [data.tasks]);
+      return {
+        total:
+          tasks.length,
+
+        completed,
+
+        pending:
+          Math.max(
+            tasks.length -
+              completed,
+            0
+          ),
+
+        todayTasks,
+      };
+    }, [data.tasks]);
 
   /*
   |--------------------------------------------------------------------------
@@ -493,30 +1060,47 @@ export default function Dashboard({
   |--------------------------------------------------------------------------
   */
 
-  const goalStats = useMemo(() => {
-    const goals = data.goals || [];
+  const goalStats =
+    useMemo(() => {
+      const goals =
+        data.goals || [];
 
-    const completed = goals.filter(
-      (goal) =>
-        goal.completed === true ||
-        goal.status === "completed" ||
-        goal.status === "done"
-    );
+      const completed =
+        goals.filter(
+          (goal) =>
+            goal.completed ===
+              true ||
+            goal.status ===
+              "completed" ||
+            goal.status ===
+              "done"
+        );
 
-    const active = goals.filter(
-      (goal) =>
-        goal.completed !== true &&
-        goal.status !== "completed" &&
-        goal.status !== "done"
-    );
+      const active =
+        goals.filter(
+          (goal) =>
+            goal.completed !==
+              true &&
+            goal.status !==
+              "completed" &&
+            goal.status !==
+              "done"
+        );
 
-    return {
-      total: goals.length,
-      completed: completed.length,
-      active: active.length,
-      activeGoals: active.slice(0, 4),
-    };
-  }, [data.goals]);
+      return {
+        total:
+          goals.length,
+
+        completed:
+          completed.length,
+
+        active:
+          active.length,
+
+        activeGoals:
+          active.slice(0, 4),
+      };
+    }, [data.goals]);
 
   /*
   |--------------------------------------------------------------------------
@@ -524,33 +1108,45 @@ export default function Dashboard({
   |--------------------------------------------------------------------------
   */
 
-  const habitStats = useMemo(() => {
-    const habits = data.habits || [];
+  const habitStats =
+    useMemo(() => {
+      const habits =
+        data.habits || [];
 
-    const completedToday = habits.filter(
-      (habit) =>
-        habit.completedToday === true ||
-        habit.todayCompleted === true ||
-        habit.completed === true
-    ).length;
+      const completedToday =
+        habits.filter(
+          (habit) =>
+            habit.completedToday ===
+              true ||
+            habit.todayCompleted ===
+              true ||
+            habit.completed ===
+              true
+        ).length;
 
-    return {
-      total: habits.length,
-      completedToday,
-      remaining: Math.max(
-        habits.length - completedToday,
-        0
-      ),
-      percentage:
-        habits.length > 0
-          ? Math.round(
-              (completedToday /
-                habits.length) *
-                100
-            )
-          : 0,
-    };
-  }, [data.habits]);
+      return {
+        total:
+          habits.length,
+
+        completedToday,
+
+        remaining:
+          Math.max(
+            habits.length -
+              completedToday,
+            0
+          ),
+
+        percentage:
+          habits.length > 0
+            ? Math.round(
+                (completedToday /
+                  habits.length) *
+                  100
+              )
+            : 0,
+      };
+    }, [data.habits]);
 
   /*
   |--------------------------------------------------------------------------
@@ -558,27 +1154,37 @@ export default function Dashboard({
   |--------------------------------------------------------------------------
   */
 
-  const fitnessStats = useMemo(() => {
-    const fitness = data.fitness || [];
+  const fitnessStats =
+    useMemo(() => {
+      const fitness =
+        data.fitness || [];
 
-    const recent = fitness.filter((item) => {
-      const date = parseDate(
-        item.date ||
-          item.createdAt
-      );
+      const recent =
+        fitness.filter(
+          (item) => {
+            const date =
+              parseDate(
+                item.date ||
+                  item.createdAt
+              );
 
-      return (
-        date &&
-        date >= sevenDaysAgo &&
-        date <= endOfToday
-      );
-    });
+            return (
+              date &&
+              date >=
+                sevenDaysAgo &&
+              date <=
+                endOfToday
+            );
+          }
+        );
 
-    return {
-      total: fitness.length,
-      recent,
-    };
-  }, [data.fitness]);
+      return {
+        total:
+          fitness.length,
+
+        recent,
+      };
+    }, [data.fitness]);
 
   /*
   |--------------------------------------------------------------------------
@@ -586,37 +1192,49 @@ export default function Dashboard({
   |--------------------------------------------------------------------------
   */
 
-  const upcomingEvents = useMemo(() => {
-    return (data.calendar || [])
-      .filter((event) => {
-        const date = parseDate(
-          event.date ||
-            event.startDate ||
-            event.start
-        );
+  const upcomingEvents =
+    useMemo(() => {
+      return (
+        data.calendar || []
+      )
+        .filter((event) => {
+          const date =
+            parseDate(
+              event.date ||
+                event.startDate ||
+                event.start
+            );
 
-        return date && date >= startOfToday;
-      })
-      .sort((a, b) => {
-        const dateA = parseDate(
-          a.date ||
-            a.startDate ||
-            a.start
-        );
+          return (
+            date &&
+            date >=
+              startOfToday
+          );
+        })
+        .sort((a, b) => {
+          const dateA =
+            parseDate(
+              a.date ||
+                a.startDate ||
+                a.start
+            );
 
-        const dateB = parseDate(
-          b.date ||
-            b.startDate ||
-            b.start
-        );
+          const dateB =
+            parseDate(
+              b.date ||
+                b.startDate ||
+                b.start
+            );
 
-        return (
-          (dateA?.getTime() || 0) -
-          (dateB?.getTime() || 0)
-        );
-      })
-      .slice(0, 5);
-  }, [data.calendar]);
+          return (
+            (dateA?.getTime() ||
+              0) -
+            (dateB?.getTime() ||
+              0)
+          );
+        })
+        .slice(0, 5);
+    }, [data.calendar]);
 
   /*
   |--------------------------------------------------------------------------
@@ -624,37 +1242,49 @@ export default function Dashboard({
   |--------------------------------------------------------------------------
   */
 
-  const upcomingTrips = useMemo(() => {
-    return (data.travel || [])
-      .filter((trip) => {
-        const date = parseDate(
-          trip.date ||
-            trip.startDate ||
-            trip.fromDate
-        );
+  const upcomingTrips =
+    useMemo(() => {
+      return (
+        data.travel || []
+      )
+        .filter((trip) => {
+          const date =
+            parseDate(
+              trip.date ||
+                trip.startDate ||
+                trip.fromDate
+            );
 
-        return date && date >= startOfToday;
-      })
-      .sort((a, b) => {
-        const dateA = parseDate(
-          a.date ||
-            a.startDate ||
-            a.fromDate
-        );
+          return (
+            date &&
+            date >=
+              startOfToday
+          );
+        })
+        .sort((a, b) => {
+          const dateA =
+            parseDate(
+              a.date ||
+                a.startDate ||
+                a.fromDate
+            );
 
-        const dateB = parseDate(
-          b.date ||
-            b.startDate ||
-            b.fromDate
-        );
+          const dateB =
+            parseDate(
+              b.date ||
+                b.startDate ||
+                b.fromDate
+            );
 
-        return (
-          (dateA?.getTime() || 0) -
-          (dateB?.getTime() || 0)
-        );
-      })
-      .slice(0, 5);
-  }, [data.travel]);
+          return (
+            (dateA?.getTime() ||
+              0) -
+            (dateB?.getTime() ||
+              0)
+          );
+        })
+        .slice(0, 5);
+    }, [data.travel]);
 
   /*
   |--------------------------------------------------------------------------
@@ -662,28 +1292,35 @@ export default function Dashboard({
   |--------------------------------------------------------------------------
   */
 
-  const recentNotes = useMemo(() => {
-    return [...(data.notes || [])]
-      .sort((a, b) => {
-        const dateA = parseDate(
-          a.updatedAt ||
-            a.createdAt ||
-            a.date
-        );
+  const recentNotes =
+    useMemo(() => {
+      return [
+        ...(data.notes || []),
+      ]
+        .sort((a, b) => {
+          const dateA =
+            parseDate(
+              a.updatedAt ||
+                a.createdAt ||
+                a.date
+            );
 
-        const dateB = parseDate(
-          b.updatedAt ||
-            b.createdAt ||
-            b.date
-        );
+          const dateB =
+            parseDate(
+              b.updatedAt ||
+                b.createdAt ||
+                b.date
+            );
 
-        return (
-          (dateB?.getTime() || 0) -
-          (dateA?.getTime() || 0)
-        );
-      })
-      .slice(0, 4);
-  }, [data.notes]);
+          return (
+            (dateB?.getTime() ||
+              0) -
+            (dateA?.getTime() ||
+              0)
+          );
+        })
+        .slice(0, 4);
+    }, [data.notes]);
 
   /*
   |--------------------------------------------------------------------------
@@ -691,14 +1328,36 @@ export default function Dashboard({
   |--------------------------------------------------------------------------
   */
 
-  const greeting = useMemo(() => {
-    const hour = today.getHours();
+  const greeting =
+    useMemo(() => {
+      const hour =
+        today.getHours();
 
-    if (hour < 12) return "Good Morning";
-    if (hour < 17) return "Good Afternoon";
+      if (hour < 12) {
+        return "Good Morning";
+      }
 
-    return "Good Evening";
-  }, []);
+      if (hour < 17) {
+        return "Good Afternoon";
+      }
+
+      return "Good Evening";
+    }, []);
+
+  /*
+  |--------------------------------------------------------------------------
+  | Current Month
+  |--------------------------------------------------------------------------
+  */
+
+  const currentMonth =
+    today.toLocaleDateString(
+      "en-US",
+      {
+        month: "long",
+        year: "numeric",
+      }
+    );
 
   /*
   |--------------------------------------------------------------------------
@@ -718,30 +1377,69 @@ export default function Dashboard({
 
   return (
     <div
-      className={`min-h-screen pb-10 ${
-        darkMode
-          ? "text-white"
-          : "text-slate-900"
-      }`}
+      className={`
+        min-h-screen
+        pb-10
+        transition-colors
+        duration-300
+        ${theme.page}
+      `}
     >
-
       {/* HERO */}
 
-      <section className="relative overflow-hidden rounded-[32px] border border-white/[0.08] bg-[#0b0d0c] p-5 shadow-2xl sm:p-7 lg:p-8">
+      <section
+        className={`
+          relative
+          overflow-hidden
+          rounded-[32px]
+          border
+          p-5
+          shadow-2xl
+          backdrop-blur-2xl
+          sm:p-7
+          lg:p-8
+          ${
+            darkMode
+              ? "border-white/[0.08] bg-[#0b0d0c]"
+              : "border-slate-200 bg-white"
+          }
+        `}
+      >
+        <div
+          className="
+            pointer-events-none
+            absolute
+            -right-24
+            -top-24
+            h-72
+            w-72
+            rounded-full
+            bg-emerald-500/[0.09]
+            blur-3xl
+          "
+        />
 
-        <div className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-emerald-500/[0.08] blur-3xl" />
-
-        <div className="pointer-events-none absolute -bottom-24 -left-20 h-56 w-56 rounded-full bg-blue-500/[0.05] blur-3xl" />
+        <div
+          className="
+            pointer-events-none
+            absolute
+            -bottom-32
+            -left-20
+            h-64
+            w-64
+            rounded-full
+            bg-blue-500/[0.06]
+            blur-3xl
+          "
+        />
 
         <div className="relative z-10">
-
-          <div className="flex flex-col gap-7 lg:flex-row lg:items-end lg:justify-between">
-
+          <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <div className="mb-3 flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-400/10">
+              <div className="mb-4 flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-400/10">
                   <Sparkles
-                    size={15}
+                    size={16}
                     className="text-emerald-400"
                   />
                 </div>
@@ -751,34 +1449,89 @@ export default function Dashboard({
                 </span>
               </div>
 
-              <h1 className="text-3xl font-bold tracking-tight sm:text-4xl lg:text-5xl">
+              <h1
+                className={`
+                  text-3xl
+                  font-bold
+                  tracking-tight
+                  sm:text-4xl
+                  lg:text-5xl
+                  ${theme.title}
+                `}
+              >
                 {user?.displayName ||
                   "Welcome"}
               </h1>
 
-              <p className="mt-3 max-w-lg text-sm leading-6 text-white/40">
-                Everything important about your
-                day, all in one place.
+              <p
+                className={`
+                  mt-3
+                  max-w-xl
+                  text-sm
+                  leading-6
+                  ${theme.muted}
+                `}
+              >
+                Your personal life,
+                finances, goals and
+                plans in one place.
               </p>
             </div>
 
-            <div className="flex items-center gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.035] px-4 py-3 backdrop-blur-xl">
+            <div
+              className={`
+                inline-flex
+                w-fit
+                items-center
+                gap-3
+                rounded-2xl
+                border
+                px-4
+                py-3
+                backdrop-blur-xl
+                ${
+                  darkMode
+                    ? "border-white/[0.08] bg-white/[0.035]"
+                    : "border-slate-200 bg-slate-50"
+                }
+              `}
+            >
               <CalendarDays
                 size={17}
-                className="text-white/50"
+                className={
+                  darkMode
+                    ? "text-white/50"
+                    : "text-slate-400"
+                }
               />
 
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-white/30">
+                <p
+                  className={`
+                    text-[10px]
+                    uppercase
+                    tracking-[0.16em]
+                    ${theme.faint}
+                  `}
+                >
                   Today
                 </p>
 
-                <p className="mt-0.5 text-sm font-medium text-white/80">
+                <p
+                  className={`
+                    mt-0.5
+                    text-sm
+                    font-semibold
+                    ${theme.text}
+                  `}
+                >
                   {today.toLocaleDateString(
                     "en-US",
                     {
-                      weekday: "short",
-                      month: "short",
+                      weekday:
+                        "long",
+                      month:
+                        "short",
                       day: "numeric",
                     }
                   )}
@@ -791,22 +1544,62 @@ export default function Dashboard({
 
           <button
             type="button"
-            onClick={() => goToPage("finance")}
-            className="mt-7 w-full rounded-[26px] border border-white/[0.08] bg-white/[0.035] p-5 text-left backdrop-blur-xl transition hover:border-emerald-400/20 hover:bg-white/[0.05] sm:p-6"
+            onClick={() =>
+              goToPage(
+                "finance"
+              )
+            }
+            className={`
+              mt-7
+              w-full
+              rounded-[28px]
+              border
+              p-5
+              text-left
+              backdrop-blur-xl
+              transition-all
+              duration-300
+              sm:p-6
+              ${
+                darkMode
+                  ? "border-white/[0.08] bg-white/[0.035] hover:border-emerald-400/20 hover:bg-white/[0.055]"
+                  : "border-slate-200 bg-slate-50/80 hover:border-emerald-300 hover:bg-white"
+              }
+            `}
           >
             <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-
               <div>
-                <p className="text-xs font-medium text-white/35">
-                  Total Balance
-                </p>
+                <div className="flex items-center gap-2">
+                  <Wallet
+                    size={15}
+                    className="text-emerald-400"
+                  />
+
+                  <p
+                    className={`
+                      text-xs
+                      font-medium
+                      ${theme.muted}
+                    `}
+                  >
+                    Total Balance
+                  </p>
+                </div>
 
                 <p
-                  className={`mt-2 text-3xl font-bold tracking-tight sm:text-4xl ${
-                    financeStats.totalBalance >= 0
-                      ? "text-white"
-                      : "text-red-400"
-                  }`}
+                  className={`
+                    mt-2
+                    text-3xl
+                    font-bold
+                    tracking-tight
+                    sm:text-4xl
+                    ${
+                      financeStats.totalBalance >=
+                      0
+                        ? theme.title
+                        : "text-red-400"
+                    }
+                  `}
                 >
                   {formatMoney(
                     financeStats.totalBalance
@@ -814,90 +1607,110 @@ export default function Dashboard({
                 </p>
 
                 <div className="mt-3">
-                  {financeStats.totalBalance >= 0 ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/10 px-2.5 py-1 text-xs font-medium text-emerald-400">
-                      <TrendingUp size={12} />
+                  {financeStats.totalBalance >=
+                  0 ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/10 px-3 py-1.5 text-xs font-medium text-emerald-400">
+                      <TrendingUp
+                        size={12}
+                      />
                       Positive balance
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-red-400/10 px-2.5 py-1 text-xs font-medium text-red-400">
-                      <TrendingDown size={12} />
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-400/10 px-3 py-1.5 text-xs font-medium text-red-400">
+                      <TrendingDown
+                        size={12}
+                      />
                       Negative balance
                     </span>
                   )}
                 </div>
               </div>
 
-              <div className="flex items-center gap-1 text-sm text-white/30">
-                Open Finance
-                <ArrowUpRight size={15} />
+              <div
+                className={`
+                  flex
+                  items-center
+                  gap-1
+                  text-xs
+                  font-medium
+                  ${theme.muted}
+                `}
+              >
+                Finance
+                <ArrowUpRight
+                  size={14}
+                />
               </div>
             </div>
 
             <div className="mt-6 grid grid-cols-2 gap-3">
+              <MiniMoneyCard
+                type="income"
+                value={
+                  financeStats.income
+                }
+                darkMode={
+                  darkMode
+                }
+                formatMoney={
+                  formatMoney
+                }
+              />
 
-              <div className="rounded-2xl border border-emerald-400/[0.08] bg-emerald-400/[0.04] p-4">
-                <div className="flex items-center gap-2 text-emerald-400">
-                  <TrendingUp size={15} />
-                  <span className="text-xs">
-                    Income
-                  </span>
-                </div>
-
-                <p className="mt-2 text-base font-semibold text-white">
-                  {formatMoney(
-                    financeStats.income
-                  )}
-                </p>
-
-                <p className="mt-1 text-[10px] text-white/25">
-                  This month
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-red-400/[0.08] bg-red-400/[0.04] p-4">
-                <div className="flex items-center gap-2 text-red-400">
-                  <TrendingDown size={15} />
-                  <span className="text-xs">
-                    Expenses
-                  </span>
-                </div>
-
-                <p className="mt-2 text-base font-semibold text-white">
-                  {formatMoney(
-                    financeStats.expense
-                  )}
-                </p>
-
-                <p className="mt-1 text-[10px] text-white/25">
-                  This month
-                </p>
-              </div>
+              <MiniMoneyCard
+                type="expense"
+                value={
+                  financeStats.expense
+                }
+                darkMode={
+                  darkMode
+                }
+                formatMoney={
+                  formatMoney
+                }
+              />
             </div>
           </button>
         </div>
       </section>
 
-      {/* STATS */}
+      {/* QUICK STATS */}
 
       <section className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-
         <StatCard
           title="Tasks"
-          value={taskStats.pending}
+          value={
+            taskStats.pending
+          }
           subtitle="Pending"
           icon={CheckSquare}
           accent="blue"
-          onClick={() => goToPage("tasks")}
+          onClick={() =>
+            goToPage(
+              "tasks"
+            )
+          }
+          darkMode={
+            darkMode
+          }
         />
 
         <StatCard
           title="Goals"
-          value={goalStats.active}
+          value={
+            goalStats.active
+          }
           subtitle="Active goals"
           icon={Target}
           accent="purple"
-          onClick={() => goToPage("goals")}
+          onClick={() =>
+            goToPage(
+              "goals"
+            )
+          }
+          darkMode={
+            darkMode
+          }
         />
 
         <StatCard
@@ -906,33 +1719,57 @@ export default function Dashboard({
           subtitle={`${habitStats.completedToday}/${habitStats.total} today`}
           icon={Repeat}
           accent="orange"
-          onClick={() => goToPage("habits")}
+          onClick={() =>
+            goToPage(
+              "habits"
+            )
+          }
+          darkMode={
+            darkMode
+          }
         />
 
         <StatCard
           title="Workouts"
-          value={fitnessStats.total}
+          value={
+            fitnessStats.total
+          }
           subtitle="Total workouts"
           icon={Dumbbell}
           accent="cyan"
-          onClick={() => goToPage("fitness")}
+          onClick={() =>
+            goToPage(
+              "fitness"
+            )
+          }
+          darkMode={
+            darkMode
+          }
         />
       </section>
 
       {/* FINANCE + TASKS */}
 
       <section className="mt-5 grid gap-5 xl:grid-cols-[1.35fr_1fr]">
-
         {preferences.showFinance && (
-          <GlassCard>
+          <GlassCard
+            darkMode={
+              darkMode
+            }
+          >
             <SectionTitle
-              icon={TrendingUp}
+              icon={Activity}
               title="Money Flow"
-              subtitle="Your last 7 days"
+              subtitle={`Last 7 days · ${currentMonth}`}
               accent="emerald"
               action="Finance"
               onAction={() =>
-                goToPage("finance")
+                goToPage(
+                  "finance"
+                )
+              }
+              darkMode={
+                darkMode
               }
             />
 
@@ -942,52 +1779,87 @@ export default function Dashboard({
                 height="100%"
               >
                 <BarChart
-                  data={last7Days}
+                  data={
+                    last7Days
+                  }
                   margin={{
-                    top: 5,
+                    top: 8,
                     right: 5,
                     left: -25,
                     bottom: 0,
                   }}
+                  barGap={5}
                 >
                   <CartesianGrid
                     strokeDasharray="3 3"
-                    stroke="rgba(255,255,255,0.055)"
-                    vertical={false}
+                    stroke={
+                      darkMode
+                        ? "rgba(255,255,255,0.055)"
+                        : "rgba(15,23,42,0.07)"
+                    }
+                    vertical={
+                      false
+                    }
                   />
 
                   <XAxis
                     dataKey="name"
-                    axisLine={false}
-                    tickLine={false}
+                    axisLine={
+                      false
+                    }
+                    tickLine={
+                      false
+                    }
                     tick={{
-                      fill: "rgba(255,255,255,0.35)",
+                      fill: darkMode
+                        ? "rgba(255,255,255,0.35)"
+                        : "rgba(15,23,42,0.45)",
                       fontSize: 11,
                     }}
                   />
 
                   <YAxis
-                    axisLine={false}
-                    tickLine={false}
+                    axisLine={
+                      false
+                    }
+                    tickLine={
+                      false
+                    }
                     tick={{
-                      fill: "rgba(255,255,255,0.25)",
+                      fill: darkMode
+                        ? "rgba(255,255,255,0.25)"
+                        : "rgba(15,23,42,0.35)",
                       fontSize: 10,
                     }}
                   />
 
                   <Tooltip
                     cursor={{
-                      fill: "rgba(255,255,255,0.025)",
+                      fill: darkMode
+                        ? "rgba(255,255,255,0.025)"
+                        : "rgba(15,23,42,0.025)",
                     }}
                     contentStyle={{
-                      background: "#101211",
+                      background:
+                        darkMode
+                          ? "#101211"
+                          : "#ffffff",
                       border:
-                        "1px solid rgba(255,255,255,0.1)",
-                      borderRadius: "14px",
-                      color: "#fff",
+                        darkMode
+                          ? "1px solid rgba(255,255,255,0.1)"
+                          : "1px solid rgba(15,23,42,0.1)",
+                      borderRadius:
+                        "14px",
+                      color: darkMode
+                        ? "#fff"
+                        : "#0f172a",
                     }}
-                    formatter={(value) =>
-                      formatMoney(value)
+                    formatter={(
+                      value
+                    ) =>
+                      formatMoney(
+                        value
+                      )
                     }
                   />
 
@@ -1001,7 +1873,9 @@ export default function Dashboard({
                       2,
                       2,
                     ]}
-                    maxBarSize={22}
+                    maxBarSize={
+                      22
+                    }
                   />
 
                   <Bar
@@ -1014,7 +1888,9 @@ export default function Dashboard({
                       2,
                       2,
                     ]}
-                    maxBarSize={22}
+                    maxBarSize={
+                      22
+                    }
                   />
                 </BarChart>
               </ResponsiveContainer>
@@ -1024,35 +1900,60 @@ export default function Dashboard({
               <LegendDot
                 label="Income"
                 className="bg-emerald-400"
+                darkMode={
+                  darkMode
+                }
               />
 
               <LegendDot
                 label="Expense"
                 className="bg-red-400"
+                darkMode={
+                  darkMode
+                }
               />
             </div>
           </GlassCard>
         )}
 
         {preferences.showTasks && (
-          <GlassCard>
+          <GlassCard
+            darkMode={
+              darkMode
+            }
+          >
             <SectionTitle
-              icon={CheckSquare}
+              icon={
+                CheckSquare
+              }
               title="Today's Focus"
-              subtitle={`${taskStats.pending} tasks waiting`}
+              subtitle={
+                taskStats.pending ===
+                0
+                  ? "Everything is clear"
+                  : `${taskStats.pending} tasks pending`
+              }
               accent="blue"
               action="Tasks"
               onAction={() =>
-                goToPage("tasks")
+                goToPage(
+                  "tasks"
+                )
+              }
+              darkMode={
+                darkMode
               }
             />
 
             <div className="mt-5">
-              {taskStats.todayTasks.length >
-              0 ? (
+              {taskStats.todayTasks
+                .length > 0 ? (
                 <div className="space-y-2.5">
                   {taskStats.todayTasks.map(
-                    (task, index) => (
+                    (
+                      task,
+                      index
+                    ) => (
                       <button
                         type="button"
                         key={
@@ -1060,31 +1961,80 @@ export default function Dashboard({
                           `task-${index}`
                         }
                         onClick={() =>
-                          goToPage("tasks")
+                          goToPage(
+                            "tasks"
+                          )
                         }
-                        className="group flex w-full items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-3.5 text-left transition hover:border-blue-400/20 hover:bg-blue-400/[0.04]"
+                        className={`
+                          group
+                          flex
+                          w-full
+                          items-center
+                          gap-3
+                          rounded-2xl
+                          border
+                          p-3.5
+                          text-left
+                          transition-all
+                          duration-200
+                          ${
+                            darkMode
+                              ? "border-white/[0.06] bg-white/[0.025] hover:border-blue-400/20 hover:bg-blue-400/[0.04]"
+                              : "border-slate-200 bg-slate-50 hover:border-blue-200 hover:bg-blue-50"
+                          }
+                        `}
                       >
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-400/10 text-blue-400">
-                          <CheckSquare size={16} />
+                          <CheckSquare
+                            size={16}
+                          />
                         </div>
 
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-white/85">
+                          <p
+                            className={`
+                              truncate
+                              text-sm
+                              font-medium
+                              ${
+                                darkMode
+                                  ? "text-white/85"
+                                  : "text-slate-700"
+                              }
+                            `}
+                          >
                             {task.title ||
                               task.name ||
                               "Untitled Task"}
                           </p>
 
                           {task.priority && (
-                            <p className="mt-1 text-[10px] text-white/30">
-                              {task.priority}
+                            <p
+                              className={`
+                                mt-1
+                                text-[10px]
+                                capitalize
+                                ${theme.muted}
+                              `}
+                            >
+                              {
+                                task.priority
+                              }
                             </p>
                           )}
                         </div>
 
                         <ChevronRight
                           size={16}
-                          className="text-white/20 transition group-hover:translate-x-0.5 group-hover:text-blue-400"
+                          className={`
+                            transition
+                            group-hover:translate-x-0.5
+                            ${
+                              darkMode
+                                ? "text-white/20 group-hover:text-blue-400"
+                                : "text-slate-300 group-hover:text-blue-500"
+                            }
+                          `}
                         />
                       </button>
                     )
@@ -1092,10 +2042,15 @@ export default function Dashboard({
                 </div>
               ) : (
                 <EmptyState
-                  icon={CircleCheck}
+                  icon={
+                    CircleCheck
+                  }
                   title="All clear"
                   text="You have no pending tasks for today."
                   accent="blue"
+                  darkMode={
+                    darkMode
+                  }
                 />
               )}
             </div>
@@ -1106,38 +2061,51 @@ export default function Dashboard({
       {/* GOALS + HABITS */}
 
       <section className="mt-5 grid gap-5 lg:grid-cols-2">
-
         {preferences.showGoals && (
-          <GlassCard>
+          <GlassCard
+            darkMode={
+              darkMode
+            }
+          >
             <SectionTitle
               icon={Target}
               title="Goals"
-              subtitle={`${goalStats.completed} completed`}
+              subtitle={`${goalStats.completed} completed · ${goalStats.active} active`}
               accent="purple"
               action="View Goals"
               onAction={() =>
-                goToPage("goals")
+                goToPage(
+                  "goals"
+                )
+              }
+              darkMode={
+                darkMode
               }
             />
 
-            {goalStats.activeGoals.length >
-            0 ? (
+            {goalStats.activeGoals
+              .length > 0 ? (
               <div className="mt-5 space-y-4">
                 {goalStats.activeGoals.map(
-                  (goal, index) => {
-                    const current = Number(
-                      goal.current ||
-                        goal.progress ||
-                        goal.completedAmount ||
-                        0
-                    );
+                  (
+                    goal,
+                    index
+                  ) => {
+                    const current =
+                      Number(
+                        goal.current ||
+                          goal.progress ||
+                          goal.completedAmount ||
+                          0
+                      );
 
-                    const target = Number(
-                      goal.target ||
-                        goal.goal ||
-                        goal.targetAmount ||
-                        100
-                    );
+                    const target =
+                      Number(
+                        goal.target ||
+                          goal.goal ||
+                          goal.targetAmount ||
+                          100
+                      );
 
                     const progress =
                       target > 0
@@ -1159,29 +2127,85 @@ export default function Dashboard({
                           `goal-${index}`
                         }
                         onClick={() =>
-                          goToPage("goals")
+                          goToPage(
+                            "goals"
+                          )
                         }
-                        className="w-full rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4 text-left transition hover:border-purple-400/20 hover:bg-purple-400/[0.035]"
+                        className={`
+                          w-full
+                          rounded-2xl
+                          border
+                          p-4
+                          text-left
+                          transition-all
+                          duration-200
+                          ${
+                            darkMode
+                              ? "border-white/[0.06] bg-white/[0.025] hover:border-purple-400/20 hover:bg-purple-400/[0.035]"
+                              : "border-slate-200 bg-slate-50 hover:border-purple-200 hover:bg-purple-50"
+                          }
+                        `}
                       >
                         <div className="flex items-center justify-between gap-3">
-                          <p className="truncate text-sm font-medium text-white/80">
+                          <p
+                            className={`
+                              truncate
+                              text-sm
+                              font-medium
+                              ${
+                                darkMode
+                                  ? "text-white/80"
+                                  : "text-slate-700"
+                              }
+                            `}
+                          >
                             {goal.title ||
                               goal.name ||
                               "Untitled Goal"}
                           </p>
 
-                          <span className="shrink-0 text-xs font-semibold text-purple-400">
-                            {progress}%
+                          <span className="shrink-0 text-xs font-bold text-purple-400">
+                            {
+                              progress
+                            }
+                            %
                           </span>
                         </div>
 
-                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.05]">
+                        <div
+                          className={`
+                            mt-3
+                            h-2
+                            overflow-hidden
+                            rounded-full
+                            ${
+                              darkMode
+                                ? "bg-white/[0.05]"
+                                : "bg-slate-200"
+                            }
+                          `}
+                        >
                           <div
                             className="h-full rounded-full bg-purple-400 transition-all duration-500"
                             style={{
                               width: `${progress}%`,
                             }}
                           />
+                        </div>
+
+                        <div className="mt-2 flex justify-between">
+                          <span
+                            className={`text-[10px] ${theme.muted}`}
+                          >
+                            Progress
+                          </span>
+
+                          <span
+                            className={`text-[10px] ${theme.muted}`}
+                          >
+                            {current} /{" "}
+                            {target}
+                          </span>
                         </div>
                       </button>
                     );
@@ -1194,13 +2218,20 @@ export default function Dashboard({
                 title="No active goals"
                 text="Create a goal and start making progress."
                 accent="purple"
+                darkMode={
+                  darkMode
+                }
               />
             )}
           </GlassCard>
         )}
 
         {preferences.showHabits && (
-          <GlassCard>
+          <GlassCard
+            darkMode={
+              darkMode
+            }
+          >
             <SectionTitle
               icon={Repeat}
               title="Daily Habits"
@@ -1208,11 +2239,16 @@ export default function Dashboard({
               accent="orange"
               action="View Habits"
               onAction={() =>
-                goToPage("habits")
+                goToPage(
+                  "habits"
+                )
+              }
+              darkMode={
+                darkMode
               }
             />
 
-            <div className="mt-5 flex items-center gap-6">
+            <div className="mt-5 flex flex-col items-center gap-7 sm:flex-row">
               <div className="relative flex h-32 w-32 shrink-0 items-center justify-center">
                 <svg
                   className="absolute inset-0 h-full w-full -rotate-90"
@@ -1223,7 +2259,11 @@ export default function Dashboard({
                     cy="50"
                     r="42"
                     fill="none"
-                    stroke="rgba(255,255,255,0.05)"
+                    stroke={
+                      darkMode
+                        ? "rgba(255,255,255,0.05)"
+                        : "rgba(15,23,42,0.08)"
+                    }
                     strokeWidth="8"
                   />
 
@@ -1246,33 +2286,89 @@ export default function Dashboard({
                 </svg>
 
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-white">
-                    {habitStats.percentage}%
+                  <p
+                    className={`
+                      text-2xl
+                      font-bold
+                      ${theme.title}
+                    `}
+                  >
+                    {
+                      habitStats.percentage
+                    }
+                    %
                   </p>
 
-                  <p className="text-[10px] text-white/30">
+                  <p
+                    className={`
+                      text-[10px]
+                      ${theme.muted}
+                    `}
+                  >
                     completed
                   </p>
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <div>
-                  <p className="text-2xl font-bold text-white">
-                    {habitStats.completedToday}
+              <div className="grid w-full grid-cols-2 gap-3 sm:block sm:w-auto sm:space-y-4">
+                <div
+                  className={`
+                    rounded-2xl
+                    p-3
+                    sm:p-0
+                    ${
+                      darkMode
+                        ? "bg-white/[0.025] sm:bg-transparent"
+                        : "bg-slate-50 sm:bg-transparent"
+                    }
+                  `}
+                >
+                  <p
+                    className={`
+                      text-2xl
+                      font-bold
+                      ${theme.title}
+                    `}
+                  >
+                    {
+                      habitStats.completedToday
+                    }
                   </p>
 
-                  <p className="text-xs text-white/35">
+                  <p
+                    className={`
+                      text-xs
+                      ${theme.muted}
+                    `}
+                  >
                     Completed today
                   </p>
                 </div>
 
-                <div>
+                <div
+                  className={`
+                    rounded-2xl
+                    p-3
+                    sm:p-0
+                    ${
+                      darkMode
+                        ? "bg-white/[0.025] sm:bg-transparent"
+                        : "bg-slate-50 sm:bg-transparent"
+                    }
+                  `}
+                >
                   <p className="text-2xl font-bold text-orange-400">
-                    {habitStats.remaining}
+                    {
+                      habitStats.remaining
+                    }
                   </p>
 
-                  <p className="text-xs text-white/35">
+                  <p
+                    className={`
+                      text-xs
+                      ${theme.muted}
+                    `}
+                  >
                     Remaining
                   </p>
                 </div>
@@ -1282,27 +2378,44 @@ export default function Dashboard({
         )}
       </section>
 
-      {/* EXPENSES */}
+      {/* EXPENSE BREAKDOWN */}
 
       {preferences.showFinance && (
-        <GlassCard className="mt-5">
+        <GlassCard
+          className="mt-5"
+          darkMode={
+            darkMode
+          }
+        >
           <SectionTitle
-            icon={TrendingDown}
+            icon={
+              TrendingDown
+            }
             title="Where Your Money Goes"
-            subtitle="This month's expenses"
+            subtitle={`${currentMonth} expenses`}
             accent="red"
             action="View Finance"
             onAction={() =>
-              goToPage("finance")
+              goToPage(
+                "finance"
+              )
+            }
+            darkMode={
+              darkMode
             }
           />
 
-          {expenseBreakdown.length > 0 ? (
+          {expenseBreakdown.length >
+          0 ? (
             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {expenseBreakdown.map(
-                (item, index) => {
+                (
+                  item,
+                  index
+                ) => {
                   const percentage =
-                    financeStats.expense > 0
+                    financeStats.expense >
+                    0
                       ? Math.round(
                           (item.value /
                             financeStats.expense) *
@@ -1315,27 +2428,76 @@ export default function Dashboard({
                       type="button"
                       key={`${item.name}-${index}`}
                       onClick={() =>
-                        goToPage("finance")
+                        goToPage(
+                          "finance"
+                        )
                       }
-                      className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4 text-left transition hover:border-red-400/20 hover:bg-red-400/[0.035]"
+                      className={`
+                        rounded-2xl
+                        border
+                        p-4
+                        text-left
+                        transition-all
+                        duration-200
+                        ${
+                          darkMode
+                            ? "border-white/[0.06] bg-white/[0.025] hover:border-red-400/20 hover:bg-red-400/[0.035]"
+                            : "border-slate-200 bg-slate-50 hover:border-red-200 hover:bg-red-50"
+                        }
+                      `}
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <p className="truncate text-sm font-medium text-white/70">
-                          {item.name}
+                        <p
+                          className={`
+                            truncate
+                            text-sm
+                            font-medium
+                            ${
+                              darkMode
+                                ? "text-white/70"
+                                : "text-slate-700"
+                            }
+                          `}
+                        >
+                          {
+                            item.name
+                          }
                         </p>
 
-                        <span className="text-xs font-semibold text-red-400">
-                          {percentage}%
+                        <span className="text-xs font-bold text-red-400">
+                          {
+                            percentage
+                          }
+                          %
                         </span>
                       </div>
 
-                      <p className="mt-2 text-base font-bold text-white">
+                      <p
+                        className={`
+                          mt-2
+                          text-base
+                          font-bold
+                          ${theme.title}
+                        `}
+                      >
                         {formatMoney(
                           item.value
                         )}
                       </p>
 
-                      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
+                      <div
+                        className={`
+                          mt-3
+                          h-1.5
+                          overflow-hidden
+                          rounded-full
+                          ${
+                            darkMode
+                              ? "bg-white/[0.05]"
+                              : "bg-slate-200"
+                          }
+                        `}
+                      >
                         <div
                           className="h-full rounded-full bg-red-400"
                           style={{
@@ -1350,10 +2512,15 @@ export default function Dashboard({
             </div>
           ) : (
             <EmptyState
-              icon={TrendingDown}
+              icon={
+                TrendingDown
+              }
               title="No expenses yet"
               text="Your expense categories will appear here."
               accent="red"
+              darkMode={
+                darkMode
+              }
             />
           )}
         </GlassCard>
@@ -1362,28 +2529,43 @@ export default function Dashboard({
       {/* EVENTS + TRAVEL */}
 
       <section className="mt-5 grid gap-5 xl:grid-cols-2">
-
-        <GlassCard>
+        <GlassCard
+          darkMode={
+            darkMode
+          }
+        >
           <SectionTitle
-            icon={CalendarDays}
+            icon={
+              CalendarDays
+            }
             title="Upcoming Events"
             subtitle="What's coming next"
             accent="blue"
             action="Calendar"
             onAction={() =>
-              goToPage("calendar")
+              goToPage(
+                "calendar"
+              )
+            }
+            darkMode={
+              darkMode
             }
           />
 
-          {upcomingEvents.length > 0 ? (
+          {upcomingEvents.length >
+          0 ? (
             <div className="mt-5 space-y-2.5">
               {upcomingEvents.map(
-                (event, index) => {
-                  const date = parseDate(
-                    event.date ||
-                      event.startDate ||
-                      event.start
-                  );
+                (
+                  event,
+                  index
+                ) => {
+                  const date =
+                    parseDate(
+                      event.date ||
+                        event.startDate ||
+                        event.start
+                    );
 
                   return (
                     <button
@@ -1393,9 +2575,27 @@ export default function Dashboard({
                         `event-${index}`
                       }
                       onClick={() =>
-                        goToPage("calendar")
+                        goToPage(
+                          "calendar"
+                        )
                       }
-                      className="group flex w-full items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-3 text-left transition hover:border-blue-400/20 hover:bg-blue-400/[0.035]"
+                      className={`
+                        group
+                        flex
+                        w-full
+                        items-center
+                        gap-3
+                        rounded-2xl
+                        border
+                        p-3
+                        text-left
+                        transition-all
+                        ${
+                          darkMode
+                            ? "border-white/[0.06] bg-white/[0.025] hover:border-blue-400/20 hover:bg-blue-400/[0.035]"
+                            : "border-slate-200 bg-slate-50 hover:border-blue-200 hover:bg-blue-50"
+                        }
+                      `}
                     >
                       <div className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl bg-blue-400/10 text-blue-400">
                         {date && (
@@ -1404,27 +2604,52 @@ export default function Dashboard({
                               {date.toLocaleDateString(
                                 "en-US",
                                 {
-                                  month: "short",
+                                  month:
+                                    "short",
                                 }
                               )}
                             </span>
 
                             <span className="text-base font-bold">
-                              {date.getDate()}
+                              {
+                                date.getDate()
+                              }
                             </span>
                           </>
                         )}
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-white/80">
+                        <p
+                          className={`
+                            truncate
+                            text-sm
+                            font-medium
+                            ${
+                              darkMode
+                                ? "text-white/80"
+                                : "text-slate-700"
+                            }
+                          `}
+                        >
                           {event.title ||
                             event.name ||
                             "Untitled Event"}
                         </p>
 
-                        <div className="mt-1 flex items-center gap-1 text-[10px] text-white/30">
-                          <Clock size={11} />
+                        <div
+                          className={`
+                            mt-1
+                            flex
+                            items-center
+                            gap-1
+                            text-[10px]
+                            ${theme.muted}
+                          `}
+                        >
+                          <Clock
+                            size={11}
+                          />
 
                           <span>
                             {event.time ||
@@ -1444,7 +2669,15 @@ export default function Dashboard({
 
                       <ChevronRight
                         size={16}
-                        className="text-white/15 transition group-hover:text-blue-400"
+                        className={`
+                          transition
+                          group-hover:translate-x-0.5
+                          ${
+                            darkMode
+                              ? "text-white/15 group-hover:text-blue-400"
+                              : "text-slate-300 group-hover:text-blue-500"
+                          }
+                        `}
                       />
                     </button>
                   );
@@ -1453,16 +2686,25 @@ export default function Dashboard({
             </div>
           ) : (
             <EmptyState
-              icon={CalendarDays}
+              icon={
+                CalendarDays
+              }
               title="No upcoming events"
               text="Your calendar is clear for now."
               accent="blue"
+              darkMode={
+                darkMode
+              }
             />
           )}
         </GlassCard>
 
         {preferences.showTravel && (
-          <GlassCard>
+          <GlassCard
+            darkMode={
+              darkMode
+            }
+          >
             <SectionTitle
               icon={Map}
               title="Upcoming Travel"
@@ -1470,19 +2712,29 @@ export default function Dashboard({
               accent="teal"
               action="Travel"
               onAction={() =>
-                goToPage("travel")
+                goToPage(
+                  "travel"
+                )
+              }
+              darkMode={
+                darkMode
               }
             />
 
-            {upcomingTrips.length > 0 ? (
+            {upcomingTrips.length >
+            0 ? (
               <div className="mt-5 space-y-2.5">
                 {upcomingTrips.map(
-                  (trip, index) => {
-                    const date = parseDate(
-                      trip.date ||
-                        trip.startDate ||
-                        trip.fromDate
-                    );
+                  (
+                    trip,
+                    index
+                  ) => {
+                    const date =
+                      parseDate(
+                        trip.date ||
+                          trip.startDate ||
+                          trip.fromDate
+                      );
 
                     return (
                       <button
@@ -1492,23 +2744,61 @@ export default function Dashboard({
                           `trip-${index}`
                         }
                         onClick={() =>
-                          goToPage("travel")
+                          goToPage(
+                            "travel"
+                          )
                         }
-                        className="group flex w-full items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-3.5 text-left transition hover:border-teal-400/20 hover:bg-teal-400/[0.035]"
+                        className={`
+                          group
+                          flex
+                          w-full
+                          items-center
+                          gap-3
+                          rounded-2xl
+                          border
+                          p-3.5
+                          text-left
+                          transition-all
+                          ${
+                            darkMode
+                              ? "border-white/[0.06] bg-white/[0.025] hover:border-teal-400/20 hover:bg-teal-400/[0.035]"
+                              : "border-slate-200 bg-slate-50 hover:border-teal-200 hover:bg-teal-50"
+                          }
+                        `}
                       >
                         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-400/10 text-teal-400">
-                          <Map size={18} />
+                          <Map
+                            size={18}
+                          />
                         </div>
 
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-white/80">
+                          <p
+                            className={`
+                              truncate
+                              text-sm
+                              font-medium
+                              ${
+                                darkMode
+                                  ? "text-white/80"
+                                  : "text-slate-700"
+                              }
+                            `}
+                          >
                             {trip.title ||
                               trip.name ||
                               trip.destination ||
                               "Untitled Trip"}
                           </p>
 
-                          <p className="mt-1 truncate text-[10px] text-white/30">
+                          <p
+                            className={`
+                              mt-1
+                              truncate
+                              text-[10px]
+                              ${theme.muted}
+                            `}
+                          >
                             {trip.destination ||
                               trip.location ||
                               (date
@@ -1521,7 +2811,15 @@ export default function Dashboard({
 
                         <ChevronRight
                           size={16}
-                          className="text-white/15 transition group-hover:text-teal-400"
+                          className={`
+                            transition
+                            group-hover:translate-x-0.5
+                            ${
+                              darkMode
+                                ? "text-white/15 group-hover:text-teal-400"
+                                : "text-slate-300 group-hover:text-teal-500"
+                            }
+                          `}
                         />
                       </button>
                     );
@@ -1534,6 +2832,9 @@ export default function Dashboard({
                 title="No upcoming trips"
                 text="Your future adventures will appear here."
                 accent="teal"
+                darkMode={
+                  darkMode
+                }
               />
             )}
           </GlassCard>
@@ -1542,7 +2843,12 @@ export default function Dashboard({
 
       {/* NOTES */}
 
-      <GlassCard className="mt-5">
+      <GlassCard
+        className="mt-5"
+        darkMode={
+          darkMode
+        }
+      >
         <SectionTitle
           icon={FileText}
           title="Recent Notes"
@@ -1550,14 +2856,23 @@ export default function Dashboard({
           accent="violet"
           action="View Notes"
           onAction={() =>
-            goToPage("notes")
+            goToPage(
+              "notes"
+            )
+          }
+          darkMode={
+            darkMode
           }
         />
 
-        {recentNotes.length > 0 ? (
+        {recentNotes.length >
+        0 ? (
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             {recentNotes.map(
-              (note, index) => (
+              (
+                note,
+                index
+              ) => (
                 <button
                   type="button"
                   key={
@@ -1565,17 +2880,44 @@ export default function Dashboard({
                     `note-${index}`
                   }
                   onClick={() =>
-                    goToPage("notes")
+                    goToPage(
+                      "notes"
+                    )
                   }
-                  className="group rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4 text-left transition hover:border-violet-400/20 hover:bg-violet-400/[0.035]"
+                  className={`
+                    group
+                    rounded-2xl
+                    border
+                    p-4
+                    text-left
+                    transition-all
+                    ${
+                      darkMode
+                        ? "border-white/[0.06] bg-white/[0.025] hover:border-violet-400/20 hover:bg-violet-400/[0.035]"
+                        : "border-slate-200 bg-slate-50 hover:border-violet-200 hover:bg-violet-50"
+                    }
+                  `}
                 >
                   <div className="flex items-start gap-3">
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-400/10 text-violet-400">
-                      <FileText size={16} />
+                      <FileText
+                        size={16}
+                      />
                     </div>
 
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-white/80">
+                      <p
+                        className={`
+                          truncate
+                          text-sm
+                          font-medium
+                          ${
+                            darkMode
+                              ? "text-white/80"
+                              : "text-slate-700"
+                          }
+                        `}
+                      >
                         {note.title ||
                           note.name ||
                           "Untitled Note"}
@@ -1584,7 +2926,15 @@ export default function Dashboard({
                       {(note.content ||
                         note.text ||
                         note.description) && (
-                        <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-white/30">
+                        <p
+                          className={`
+                            mt-1.5
+                            line-clamp-2
+                            text-xs
+                            leading-5
+                            ${theme.muted}
+                          `}
+                        >
                           {note.content ||
                             note.text ||
                             note.description}
@@ -1594,7 +2944,14 @@ export default function Dashboard({
 
                     <ArrowUpRight
                       size={15}
-                      className="text-white/15 transition group-hover:text-violet-400"
+                      className={`
+                        transition
+                        ${
+                          darkMode
+                            ? "text-white/15 group-hover:text-violet-400"
+                            : "text-slate-300 group-hover:text-violet-500"
+                        }
+                      `}
                     />
                   </div>
                 </button>
@@ -1603,14 +2960,109 @@ export default function Dashboard({
           </div>
         ) : (
           <EmptyState
-            icon={FileText}
+            icon={
+              FileText
+            }
             title="No notes yet"
             text="Create your first note to see it here."
             accent="violet"
+            darkMode={
+              darkMode
+            }
           />
         )}
       </GlassCard>
+    </div>
+  );
+}
 
+/*
+|--------------------------------------------------------------------------
+| Mini Money Card
+|--------------------------------------------------------------------------
+*/
+
+function MiniMoneyCard({
+  type,
+  value,
+  darkMode,
+  formatMoney,
+}) {
+  const isIncome =
+    type === "income";
+
+  return (
+    <div
+      className={`
+        rounded-2xl
+        border
+        p-4
+        ${
+          isIncome
+            ? "border-emerald-400/[0.08] bg-emerald-400/[0.04]"
+            : "border-red-400/[0.08] bg-red-400/[0.04]"
+        }
+      `}
+    >
+      <div
+        className={`
+          flex
+          items-center
+          gap-2
+          ${
+            isIncome
+              ? "text-emerald-400"
+              : "text-red-400"
+          }
+        `}
+      >
+        {isIncome ? (
+          <TrendingUp
+            size={15}
+          />
+        ) : (
+          <TrendingDown
+            size={15}
+          />
+        )}
+
+        <span className="text-xs font-medium">
+          {isIncome
+            ? "Income"
+            : "Expenses"}
+        </span>
+      </div>
+
+      <p
+        className={`
+          mt-2
+          text-base
+          font-bold
+          ${
+            darkMode
+              ? "text-white"
+              : "text-slate-900"
+          }
+        `}
+      >
+        {formatMoney(
+          value
+        )}
+      </p>
+
+      <p
+        className={`
+          mt-1
+          text-[10px]
+          ${
+            darkMode
+              ? "text-white/25"
+              : "text-slate-400"
+          }
+        `}
+      >
+        This month
+      </p>
     </div>
   );
 }
@@ -1628,33 +3080,34 @@ function StatCard({
   icon: Icon,
   accent,
   onClick,
+  darkMode,
 }) {
   const accents = {
     blue: {
       bg: "bg-blue-400/10",
       text: "text-blue-400",
-      border:
+      hover:
         "hover:border-blue-400/20",
     },
 
     purple: {
       bg: "bg-purple-400/10",
       text: "text-purple-400",
-      border:
+      hover:
         "hover:border-purple-400/20",
     },
 
     orange: {
       bg: "bg-orange-400/10",
       text: "text-orange-400",
-      border:
+      hover:
         "hover:border-orange-400/20",
     },
 
     cyan: {
       bg: "bg-cyan-400/10",
       text: "text-cyan-400",
-      border:
+      hover:
         "hover:border-cyan-400/20",
     },
   };
@@ -1667,30 +3120,94 @@ function StatCard({
     <button
       type="button"
       onClick={onClick}
-      className={`group rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4 text-left transition duration-200 ${style.border}`}
+      className={`
+        group
+        rounded-2xl
+        border
+        p-4
+        text-left
+        shadow-sm
+        transition-all
+        duration-200
+        ${style.hover}
+        ${
+          darkMode
+            ? "border-white/[0.07] bg-white/[0.025]"
+            : "border-slate-200 bg-white"
+        }
+      `}
     >
       <div className="flex items-center justify-between">
         <div
-          className={`flex h-9 w-9 items-center justify-center rounded-xl ${style.bg} ${style.text}`}
+          className={`
+            flex
+            h-9
+            w-9
+            items-center
+            justify-center
+            rounded-xl
+            ${style.bg}
+            ${style.text}
+          `}
         >
           <Icon size={17} />
         </div>
 
         <ArrowUpRight
           size={15}
-          className="text-white/15 transition group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+          className={`
+            transition
+            group-hover:-translate-y-0.5
+            group-hover:translate-x-0.5
+            ${
+              darkMode
+                ? "text-white/15"
+                : "text-slate-300"
+            }
+          `}
         />
       </div>
 
-      <p className="mt-4 text-xs text-white/35">
+      <p
+        className={`
+          mt-4
+          text-xs
+          ${
+            darkMode
+              ? "text-white/35"
+              : "text-slate-400"
+          }
+        `}
+      >
         {title}
       </p>
 
-      <p className="mt-1 text-xl font-bold text-white">
+      <p
+        className={`
+          mt-1
+          text-xl
+          font-bold
+          ${
+            darkMode
+              ? "text-white"
+              : "text-slate-900"
+          }
+        `}
+      >
         {value}
       </p>
 
-      <p className="mt-1 text-[10px] text-white/25">
+      <p
+        className={`
+          mt-1
+          text-[10px]
+          ${
+            darkMode
+              ? "text-white/25"
+              : "text-slate-400"
+          }
+        `}
+      >
         {subtitle}
       </p>
     </button>
@@ -1706,10 +3223,26 @@ function StatCard({
 function GlassCard({
   children,
   className = "",
+  darkMode,
 }) {
   return (
     <section
-      className={`rounded-[26px] border border-white/[0.07] bg-white/[0.025] p-4 shadow-xl backdrop-blur-xl sm:p-5 ${className}`}
+      className={`
+        rounded-[26px]
+        border
+        p-4
+        shadow-xl
+        backdrop-blur-xl
+        transition-colors
+        duration-300
+        sm:p-5
+        ${
+          darkMode
+            ? "border-white/[0.07] bg-white/[0.025]"
+            : "border-slate-200 bg-white/75"
+        }
+        ${className}
+      `}
     >
       {children}
     </section>
@@ -1729,20 +3262,27 @@ function SectionTitle({
   accent,
   action,
   onAction,
+  darkMode,
 }) {
   const colors = {
     emerald:
       "bg-emerald-400/10 text-emerald-400",
+
     blue:
       "bg-blue-400/10 text-blue-400",
+
     purple:
       "bg-purple-400/10 text-purple-400",
+
     orange:
       "bg-orange-400/10 text-orange-400",
+
     red:
       "bg-red-400/10 text-red-400",
+
     teal:
       "bg-teal-400/10 text-teal-400",
+
     violet:
       "bg-violet-400/10 text-violet-400",
   };
@@ -1751,20 +3291,51 @@ function SectionTitle({
     <div className="flex items-center justify-between gap-3">
       <div className="flex min-w-0 items-center gap-3">
         <div
-          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-            colors[accent] ||
-            colors.emerald
-          }`}
+          className={`
+            flex
+            h-10
+            w-10
+            shrink-0
+            items-center
+            justify-center
+            rounded-xl
+            ${
+              colors[accent] ||
+              colors.emerald
+            }
+          `}
         >
           <Icon size={18} />
         </div>
 
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold text-white/85">
+          <h2
+            className={`
+              truncate
+              text-sm
+              font-semibold
+              ${
+                darkMode
+                  ? "text-white/85"
+                  : "text-slate-800"
+              }
+            `}
+          >
             {title}
           </h2>
 
-          <p className="mt-0.5 truncate text-[10px] text-white/25">
+          <p
+            className={`
+              mt-0.5
+              truncate
+              text-[10px]
+              ${
+                darkMode
+                  ? "text-white/25"
+                  : "text-slate-400"
+              }
+            `}
+          >
             {subtitle}
           </p>
         </div>
@@ -1774,10 +3345,26 @@ function SectionTitle({
         <button
           type="button"
           onClick={onAction}
-          className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-white/35 transition hover:text-white/70"
+          className={`
+            flex
+            shrink-0
+            items-center
+            gap-1
+            text-[11px]
+            font-medium
+            transition
+            ${
+              darkMode
+                ? "text-white/35 hover:text-white/70"
+                : "text-slate-400 hover:text-slate-700"
+            }
+          `}
         >
           {action}
-          <ChevronRight size={13} />
+
+          <ChevronRight
+            size={13}
+          />
         </button>
       )}
     </div>
@@ -1793,14 +3380,29 @@ function SectionTitle({
 function LegendDot({
   label,
   className,
+  darkMode,
 }) {
   return (
     <div className="flex items-center gap-2">
       <span
-        className={`h-2 w-2 rounded-full ${className}`}
+        className={`
+          h-2
+          w-2
+          rounded-full
+          ${className}
+        `}
       />
 
-      <span className="text-[10px] text-white/30">
+      <span
+        className={`
+          text-[10px]
+          ${
+            darkMode
+              ? "text-white/30"
+              : "text-slate-400"
+          }
+        `}
+      >
         {label}
       </span>
     </div>
@@ -1818,18 +3420,24 @@ function EmptyState({
   title,
   text,
   accent,
+  darkMode,
 }) {
   const colors = {
     blue:
       "bg-blue-400/10 text-blue-400",
+
     purple:
       "bg-purple-400/10 text-purple-400",
+
     orange:
       "bg-orange-400/10 text-orange-400",
+
     red:
       "bg-red-400/10 text-red-400",
+
     teal:
       "bg-teal-400/10 text-teal-400",
+
     violet:
       "bg-violet-400/10 text-violet-400",
   };
@@ -1837,19 +3445,50 @@ function EmptyState({
   return (
     <div className="flex flex-col items-center justify-center py-10 text-center">
       <div
-        className={`flex h-12 w-12 items-center justify-center rounded-2xl ${
-          colors[accent] ||
-          colors.blue
-        }`}
+        className={`
+          flex
+          h-12
+          w-12
+          items-center
+          justify-center
+          rounded-2xl
+          ${
+            colors[accent] ||
+            colors.blue
+          }
+        `}
       >
         <Icon size={20} />
       </div>
 
-      <p className="mt-3 text-sm font-medium text-white/60">
+      <p
+        className={`
+          mt-3
+          text-sm
+          font-medium
+          ${
+            darkMode
+              ? "text-white/60"
+              : "text-slate-600"
+          }
+        `}
+      >
         {title}
       </p>
 
-      <p className="mt-1 max-w-xs text-[11px] leading-5 text-white/25">
+      <p
+        className={`
+          mt-1
+          max-w-xs
+          text-[11px]
+          leading-5
+          ${
+            darkMode
+              ? "text-white/25"
+              : "text-slate-400"
+          }
+        `}
+      >
         {text}
       </p>
     </div>
@@ -1862,28 +3501,79 @@ function EmptyState({
 |--------------------------------------------------------------------------
 */
 
-function parseDate(value) {
-  if (!value) return null;
+function parseDate(
+  value
+) {
+  if (!value) {
+    return null;
+  }
+
+  /*
+  | Firestore Timestamp
+  */
 
   if (
     value &&
-    typeof value.toDate === "function"
+    typeof value.toDate ===
+      "function"
   ) {
     return value.toDate();
   }
 
+  /*
+  | Firestore timestamp-like object
+  */
+
   if (
     value &&
-    typeof value.seconds === "number"
+    typeof value.seconds ===
+      "number"
   ) {
     return new Date(
       value.seconds * 1000
     );
   }
 
-  const date = new Date(value);
+  /*
+  | JSON/localStorage timestamp
+  */
 
-  if (Number.isNaN(date.getTime())) {
+  if (
+    value &&
+    typeof value._seconds ===
+      "number"
+  ) {
+    return new Date(
+      value._seconds * 1000
+    );
+  }
+
+  /*
+  | Date object
+  */
+
+  if (
+    value instanceof Date
+  ) {
+    return Number.isNaN(
+      value.getTime()
+    )
+      ? null
+      : value;
+  }
+
+  /*
+  | String / number
+  */
+
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
     return null;
   }
 
@@ -1896,8 +3586,12 @@ function parseDate(value) {
 |--------------------------------------------------------------------------
 */
 
-function formatDate(date) {
-  if (!date) return "No date";
+function formatDate(
+  date
+) {
+  if (!date) {
+    return "No date";
+  }
 
   return date.toLocaleDateString(
     "en-US",

@@ -21,14 +21,15 @@ import { db } from "../firebase/config";
 
 import {
   collection,
-  addDoc,
-  updateDoc,
   deleteDoc,
   doc,
+  getDocsFromCache,
   onSnapshot,
   query,
   orderBy,
   serverTimestamp,
+  setDoc,
+  updateDoc,
 } from "firebase/firestore";
 
 // ===========================================================
@@ -91,21 +92,193 @@ function getColorStyle(color) {
   );
 }
 
+function getNotesBackupKey(uid) {
+  return `my-dashboard-${uid}-notes`;
+}
+
+function loadNotesBackup(uid) {
+  if (!uid) return [];
+
+  try {
+    const raw = localStorage.getItem(
+      getNotesBackupKey(uid)
+    );
+
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+
+    return Array.isArray(parsed)
+      ? parsed
+      : [];
+  } catch (error) {
+    console.warn(
+      "Notes local backup load failed:",
+      error
+    );
+
+    return [];
+  }
+}
+
+function saveNotesBackup(uid, notes) {
+  if (!uid) return;
+
+  try {
+    localStorage.setItem(
+      getNotesBackupKey(uid),
+      JSON.stringify(notes)
+    );
+  } catch (error) {
+    console.warn(
+      "Notes local backup save failed:",
+      error
+    );
+  }
+}
+
+function getTimestampValue(timestamp) {
+  if (!timestamp) return 0;
+
+  try {
+    if (
+      typeof timestamp?.toMillis ===
+      "function"
+    ) {
+      return timestamp.toMillis();
+    }
+
+    if (
+      typeof timestamp?.toDate ===
+      "function"
+    ) {
+      return timestamp.toDate().getTime();
+    }
+
+    if (
+      typeof timestamp === "object" &&
+      typeof timestamp.seconds ===
+        "number"
+    ) {
+      return (
+        timestamp.seconds * 1000 +
+        Math.floor(
+          (timestamp.nanoseconds || 0) /
+            1000000
+        )
+      );
+    }
+
+    if (
+      typeof timestamp === "object" &&
+      typeof timestamp._seconds ===
+        "number"
+    ) {
+      return (
+        timestamp._seconds * 1000 +
+        Math.floor(
+          (timestamp._nanoseconds || 0) /
+            1000000
+        )
+      );
+    }
+
+    if (
+      timestamp instanceof Date
+    ) {
+      return timestamp.getTime();
+    }
+
+    if (
+      typeof timestamp === "string" ||
+      typeof timestamp === "number"
+    ) {
+      const value = new Date(
+        timestamp
+      ).getTime();
+
+      return Number.isNaN(value)
+        ? 0
+        : value;
+    }
+  } catch {
+    return 0;
+  }
+
+  return 0;
+}
+
+function sortNotes(data) {
+  return [...data].sort((a, b) => {
+    const timeA =
+      getTimestampValue(
+        a.createdAt ||
+          a.updatedAt
+      );
+
+    const timeB =
+      getTimestampValue(
+        b.createdAt ||
+          b.updatedAt
+      );
+
+    return timeB - timeA;
+  });
+}
+
 function formatDate(timestamp) {
   if (!timestamp) return "Just now";
 
   try {
-    if (timestamp.toDate) {
-      return timestamp
-        .toDate()
-        .toLocaleDateString("en-US", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        });
+    let date = null;
+
+    if (
+      typeof timestamp?.toDate ===
+      "function"
+    ) {
+      date = timestamp.toDate();
+    } else if (
+      typeof timestamp === "object" &&
+      typeof timestamp.seconds ===
+        "number"
+    ) {
+      date = new Date(
+        timestamp.seconds * 1000
+      );
+    } else if (
+      typeof timestamp === "object" &&
+      typeof timestamp._seconds ===
+        "number"
+    ) {
+      date = new Date(
+        timestamp._seconds * 1000
+      );
+    } else if (
+      timestamp instanceof Date
+    ) {
+      date = timestamp;
+    } else if (
+      typeof timestamp === "string" ||
+      typeof timestamp === "number"
+    ) {
+      date = new Date(timestamp);
     }
 
-    return "Just now";
+    if (
+      !date ||
+      Number.isNaN(date.getTime())
+    ) {
+      return "Just now";
+    }
+
+    return date.toLocaleDateString(
+      "en-US",
+      {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }
+    );
   } catch {
     return "Just now";
   }
@@ -121,9 +294,12 @@ export default function Notes({ user }) {
   // =========================================================
 
   const [notes, setNotes] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] =
+    useState(true);
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] =
+    useState("");
+
   const [categoryFilter, setCategoryFilter] =
     useState("All");
 
@@ -133,8 +309,11 @@ export default function Notes({ user }) {
   const [editingNote, setEditingNote] =
     useState(null);
 
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
+  const [title, setTitle] =
+    useState("");
+
+  const [content, setContent] =
+    useState("");
 
   const [category, setCategory] =
     useState("Personal");
@@ -155,7 +334,7 @@ export default function Notes({ user }) {
     useState(null);
 
   // =========================================================
-  // FIREBASE LIVE DATA
+  // FIREBASE + LOCAL OFFLINE DATA
   // =========================================================
 
   useEffect(() => {
@@ -164,6 +343,8 @@ export default function Notes({ user }) {
       setLoading(false);
       return;
     }
+
+    let cancelled = false;
 
     const notesRef = collection(
       db,
@@ -177,29 +358,177 @@ export default function Notes({ user }) {
       orderBy("createdAt", "desc")
     );
 
-    const unsubscribe = onSnapshot(
-      notesQuery,
-      (snapshot) => {
-        const data =
-          snapshot.docs.map((item) => ({
-            id: item.id,
-            ...item.data(),
-          }));
+    // -------------------------------------------------------
+    // LOCAL STORAGE FIRST
+    // -------------------------------------------------------
 
-        setNotes(data);
+    const localBackup =
+      loadNotesBackup(user.uid);
+
+    if (localBackup.length > 0) {
+      setNotes(
+        sortNotes(localBackup)
+      );
+    }
+
+    setLoading(true);
+
+    // -------------------------------------------------------
+    // FIRESTORE CACHE
+    // -------------------------------------------------------
+
+    getDocsFromCache(notesQuery)
+      .then((snapshot) => {
+        if (cancelled) return;
+
+        const cachedData =
+          snapshot.docs.map(
+            (item) => ({
+              id: item.id,
+              ...item.data(),
+            })
+          );
+
+        if (cachedData.length > 0) {
+          const sorted =
+            sortNotes(cachedData);
+
+          setNotes(sorted);
+          saveNotesBackup(
+            user.uid,
+            sorted
+          );
+        }
+
         setLoading(false);
-      },
-      (error) => {
-        console.error(
-          "Notes Firestore error:",
+      })
+      .catch((error) => {
+        console.warn(
+          "Notes cache unavailable:",
           error
         );
 
-        setLoading(false);
-      }
-    );
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
 
-    return () => unsubscribe();
+    // -------------------------------------------------------
+    // LIVE FIRESTORE LISTENER
+    // -------------------------------------------------------
+
+    const unsubscribe =
+      onSnapshot(
+        notesQuery,
+        {
+          includeMetadataChanges: true,
+        },
+        (snapshot) => {
+          if (cancelled) return;
+
+          const data =
+            snapshot.docs.map(
+              (item) => ({
+                id: item.id,
+                ...item.data(),
+              })
+            );
+
+          const sorted =
+            sortNotes(data);
+
+          const currentBackup =
+            loadNotesBackup(
+              user.uid
+            );
+
+          // -------------------------------------------------
+          // IMPORTANT
+          //
+          // When offline, Firestore can return an empty
+          // fromCache snapshot before local data is available.
+          // Do not destroy our local backup in that case.
+          // -------------------------------------------------
+
+          if (
+            sorted.length === 0 &&
+            snapshot.metadata
+              .fromCache &&
+            currentBackup.length > 0
+          ) {
+            setNotes(
+              sortNotes(
+                currentBackup
+              )
+            );
+
+            setLoading(false);
+            return;
+          }
+
+          setNotes(sorted);
+          setLoading(false);
+
+          // Save real Firestore data to local backup.
+          //
+          // Also save empty data only when it is confirmed
+          // server data. This prevents accidental deletion
+          // of offline local data.
+          if (
+            sorted.length > 0 ||
+            !snapshot.metadata.fromCache
+          ) {
+            saveNotesBackup(
+              user.uid,
+              sorted
+            );
+          }
+        },
+        (error) => {
+          console.error(
+            "Notes Firestore error:",
+            error
+          );
+
+          // Keep local data if Firebase fails.
+          const backup =
+            loadNotesBackup(
+              user.uid
+            );
+
+          if (
+            !cancelled &&
+            backup.length > 0
+          ) {
+            setNotes(
+              sortNotes(backup)
+            );
+          }
+
+          if (!cancelled) {
+            setLoading(false);
+          }
+        }
+      );
+
+    // -------------------------------------------------------
+    // LOADING FALLBACK
+    // -------------------------------------------------------
+
+    const loadingTimeout =
+      setTimeout(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }, 4000);
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+      clearTimeout(
+        loadingTimeout
+      );
+    };
   }, [user?.uid]);
 
   // =========================================================
@@ -268,6 +597,7 @@ export default function Notes({ user }) {
 
   // =========================================================
   // SAVE
+  // OFFLINE-FIRST / OPTIMISTIC
   // =========================================================
 
   const handleSave = async (e) => {
@@ -289,68 +619,159 @@ export default function Notes({ user }) {
       return;
     }
 
-    setSaving(true);
+    // -------------------------------------------------------
+    // Create the local data first.
+    // Do NOT wait for Firebase.
+    // -------------------------------------------------------
 
-    try {
-      const noteData = {
-        title: cleanTitle,
-        content: cleanContent,
-        category,
-        color,
-        pinned,
-        favorite,
-        updatedAt:
-          serverTimestamp(),
-      };
+    const now =
+      new Date().toISOString();
 
-      // EDIT
-      if (editingNote) {
-        await updateDoc(
-          doc(
-            db,
-            "users",
-            user.uid,
-            "notes",
-            editingNote.id
-          ),
-          noteData
+    const noteData = {
+      title: cleanTitle,
+      content: cleanContent,
+      category,
+      color,
+      pinned,
+      favorite,
+      updatedAt: now,
+    };
+
+    const notesRef = collection(
+      db,
+      "users",
+      user.uid,
+      "notes"
+    );
+
+    // -------------------------------------------------------
+    // EDIT
+    // -------------------------------------------------------
+
+    if (editingNote) {
+      const updatedNotes =
+        notes.map((note) =>
+          note.id === editingNote.id
+            ? {
+                ...note,
+                ...noteData,
+                id: editingNote.id,
+              }
+            : note
         );
-      }
 
-      // ADD
-      else {
-        await addDoc(
-          collection(
-            db,
-            "users",
-            user.uid,
-            "notes"
-          ),
-          {
-            ...noteData,
-            createdAt:
-              serverTimestamp(),
-          }
+      const sorted =
+        sortNotes(updatedNotes);
+
+      // Update UI immediately
+      setNotes(sorted);
+
+      // Save local backup immediately
+      saveNotesBackup(
+        user.uid,
+        sorted
+      );
+
+      // Close modal immediately
+      setSaving(false);
+      setShowModal(false);
+      setEditingNote(null);
+
+      setTitle("");
+      setContent("");
+      setCategory("Personal");
+      setColor("default");
+      setPinned(false);
+      setFavorite(false);
+
+      // Firebase sync in background
+      void updateDoc(
+        doc(
+          db,
+          "users",
+          user.uid,
+          "notes",
+          editingNote.id
+        ),
+        {
+          ...noteData,
+          updatedAt:
+            serverTimestamp(),
+        }
+      ).catch((error) => {
+        console.warn(
+          "Notes offline edit sync pending:",
+          error
         );
-      }
+      });
 
-      closeModal();
-    } catch (error) {
-      console.error(
-        "Notes save error:",
+      return;
+    }
+
+    // -------------------------------------------------------
+    // ADD
+    // -------------------------------------------------------
+
+    const newNoteRef =
+      doc(notesRef);
+
+    const newNote = {
+      id: newNoteRef.id,
+      ...noteData,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const updatedNotes =
+      sortNotes([
+        ...notes,
+        newNote,
+      ]);
+
+    // Update UI immediately
+    setNotes(updatedNotes);
+
+    // Save local backup immediately
+    saveNotesBackup(
+      user.uid,
+      updatedNotes
+    );
+
+    // Close modal immediately
+    setSaving(false);
+    setShowModal(false);
+    setEditingNote(null);
+
+    setTitle("");
+    setContent("");
+    setCategory("Personal");
+    setColor("default");
+    setPinned(false);
+    setFavorite(false);
+
+    // Firebase sync in background
+    void setDoc(newNoteRef, {
+      title: cleanTitle,
+      content: cleanContent,
+      category,
+      color,
+      pinned,
+      favorite,
+      createdAt:
+        serverTimestamp(),
+      updatedAt:
+        serverTimestamp(),
+    }).catch((error) => {
+      console.warn(
+        "Notes offline add sync pending:",
         error
       );
-
-      alert(
-        "Could not save note."
-      );
-    } finally {
-      setSaving(false);
-    }
+    });
   };
 
   // =========================================================
   // DELETE
+  // OFFLINE-FIRST / OPTIMISTIC
   // =========================================================
 
   const handleDelete = async (id) => {
@@ -365,66 +786,105 @@ export default function Notes({ user }) {
 
     setDeletingId(id);
 
-    try {
-      await deleteDoc(
-        doc(
-          db,
-          "users",
-          user.uid,
-          "notes",
-          id
-        )
-      );
-    } catch (error) {
-      console.error(
-        "Notes delete error:",
-        error
+    // -------------------------------------------------------
+    // Remove locally first
+    // -------------------------------------------------------
+
+    const updatedNotes =
+      notes.filter(
+        (note) => note.id !== id
       );
 
-      alert(
-        "Could not delete note."
+    setNotes(updatedNotes);
+
+    saveNotesBackup(
+      user.uid,
+      updatedNotes
+    );
+
+    // UI should not wait for Firebase
+    setDeletingId(null);
+
+    // -------------------------------------------------------
+    // Delete from Firebase in background
+    // -------------------------------------------------------
+
+    void deleteDoc(
+      doc(
+        db,
+        "users",
+        user.uid,
+        "notes",
+        id
+      )
+    ).catch((error) => {
+      console.warn(
+        "Notes offline delete sync pending:",
+        error
       );
-    } finally {
-      setDeletingId(null);
-    }
+    });
   };
 
   // =========================================================
   // QUICK PIN
+  // OFFLINE-FIRST
   // =========================================================
 
   const togglePin = async (note) => {
     if (!user?.uid) return;
 
-    try {
-      await updateDoc(
-        doc(
-          db,
-          "users",
-          user.uid,
-          "notes",
-          note.id
-        ),
-        {
-          pinned: !note.pinned,
-          updatedAt:
-            serverTimestamp(),
-        }
-      );
-    } catch (error) {
-      console.error(
-        "Pin update error:",
-        error
+    const newPinned =
+      !note.pinned;
+
+    const updatedNotes =
+      notes.map((item) =>
+        item.id === note.id
+          ? {
+              ...item,
+              pinned: newPinned,
+              updatedAt:
+                new Date().toISOString(),
+            }
+          : item
       );
 
-      alert(
-        "Could not update pin."
+    const sorted =
+      sortNotes(updatedNotes);
+
+    // Immediate UI update
+    setNotes(sorted);
+
+    // Immediate local backup
+    saveNotesBackup(
+      user.uid,
+      sorted
+    );
+
+    // Background Firebase sync
+    void updateDoc(
+      doc(
+        db,
+        "users",
+        user.uid,
+        "notes",
+        note.id
+      ),
+      {
+        pinned: newPinned,
+        updatedAt:
+          serverTimestamp(),
+      }
+    ).catch((error) => {
+      console.warn(
+        "Pin offline sync pending:",
+        error
       );
-    }
+    });
   };
 
   // =========================================================
   // QUICK FAVORITE
+  // OFFLINE-FIRST
   // =========================================================
 
   const toggleFavorite = async (
@@ -432,31 +892,53 @@ export default function Notes({ user }) {
   ) => {
     if (!user?.uid) return;
 
-    try {
-      await updateDoc(
-        doc(
-          db,
-          "users",
-          user.uid,
-          "notes",
-          note.id
-        ),
-        {
-          favorite: !note.favorite,
-          updatedAt:
-            serverTimestamp(),
-        }
-      );
-    } catch (error) {
-      console.error(
-        "Favorite update error:",
-        error
+    const newFavorite =
+      !note.favorite;
+
+    const updatedNotes =
+      notes.map((item) =>
+        item.id === note.id
+          ? {
+              ...item,
+              favorite: newFavorite,
+              updatedAt:
+                new Date().toISOString(),
+            }
+          : item
       );
 
-      alert(
-        "Could not update favorite."
+    const sorted =
+      sortNotes(updatedNotes);
+
+    // Immediate UI update
+    setNotes(sorted);
+
+    // Immediate local backup
+    saveNotesBackup(
+      user.uid,
+      sorted
+    );
+
+    // Background Firebase sync
+    void updateDoc(
+      doc(
+        db,
+        "users",
+        user.uid,
+        "notes",
+        note.id
+      ),
+      {
+        favorite: newFavorite,
+        updatedAt:
+          serverTimestamp(),
+      }
+    ).catch((error) => {
+      console.warn(
+        "Favorite offline sync pending:",
+        error
       );
-    }
+    });
   };
 
   // =========================================================
@@ -509,7 +991,16 @@ export default function Notes({ user }) {
         return a.favorite ? -1 : 1;
       }
 
-      return 0;
+      return (
+        getTimestampValue(
+          b.updatedAt ||
+            b.createdAt
+        ) -
+        getTimestampValue(
+          a.updatedAt ||
+            a.createdAt
+        )
+      );
     });
   }, [
     notes,
@@ -521,7 +1012,8 @@ export default function Notes({ user }) {
   // STATISTICS
   // =========================================================
 
-  const totalNotes = notes.length;
+  const totalNotes =
+    notes.length;
 
   const pinnedNotes =
     notes.filter(
@@ -679,7 +1171,8 @@ export default function Notes({ user }) {
                 )
               }
               className={`shrink-0 rounded-xl px-3 py-2 text-xs font-medium transition ${
-                categoryFilter === item
+                categoryFilter ===
+                item
                   ? "bg-white text-black"
                   : "text-white/40 hover:bg-white/10 hover:text-white"
               }`}
@@ -960,7 +1453,7 @@ export default function Notes({ user }) {
 
           <form
             onSubmit={handleSave}
-            className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl border border-white/10 bg-[#101010]/95 p-5 shadow-2xl backdrop-blur-2xl sm:max-w-xl sm:rounded-3xl sm:p-6"
+            className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl border border-white/10 bg-[#101010]/95 p-5 pb-8 shadow-2xl backdrop-blur-2xl sm:max-w-xl sm:rounded-3xl sm:p-6"
           >
 
             {/* HEADER */}
@@ -1102,7 +1595,7 @@ export default function Notes({ user }) {
                       title={
                         item.name
                       }
-                      className={`flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] transition ${
+                      className={`relative flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] transition ${
                         color ===
                         item.value
                           ? `ring-2 ${item.active}`

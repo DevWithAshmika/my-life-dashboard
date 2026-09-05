@@ -8,10 +8,8 @@ import {
 } from "firebase/auth";
 
 import {
-  getFirestore,
   initializeFirestore,
   persistentLocalCache,
-  persistentMultipleTabManager,
 } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -21,38 +19,56 @@ const firebaseConfig = {
   storageBucket: "mylife-dashboard-9e9da.firebasestorage.app",
   messagingSenderId: "1080771407569",
   appId: "1:1080771407569:web:5606e94f7309861eecdff0",
-  measurementId: "G-FH4K11XQ56",
+  measurementId: "G-FH4K11XQ56"
 };
 
 const app = initializeApp(firebaseConfig);
 
 /*
 |--------------------------------------------------------------------------
-| AUTH
+| Firebase Authentication
 |--------------------------------------------------------------------------
 */
 
 export const auth = getAuth(app);
 
-setPersistence(auth, browserLocalPersistence).catch((error) => {
-  console.warn("Auth persistence could not be enabled:", error);
+setPersistence(
+  auth,
+  browserLocalPersistence
+).catch((error) => {
+  console.warn(
+    "Auth persistence could not be enabled:",
+    error
+  );
 });
 
 /*
 |--------------------------------------------------------------------------
-| FIRESTORE OFFLINE CACHE
+| Firestore
 |--------------------------------------------------------------------------
+|
+| Firestore persistent local cache handles:
+|
+| - Offline reads
+| - Offline writes
+| - Cached documents
+| - Automatic synchronization
+| - Reconnection
+|
+| We do NOT manually disable/enable Firestore
+| based on Capacitor network status.
+|
+| This avoids startup delays and network race conditions.
+|
 */
 
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager(),
-  }),
+  localCache: persistentLocalCache(),
 });
 
 /*
 |--------------------------------------------------------------------------
-| GOOGLE
+| Google Authentication Provider
 |--------------------------------------------------------------------------
 */
 

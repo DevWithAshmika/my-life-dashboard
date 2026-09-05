@@ -22,17 +22,24 @@ import {
 } from "lucide-react";
 
 import {
-  addDoc,
   collection,
   deleteDoc,
   doc,
+  getDocsFromCache,
   onSnapshot,
   serverTimestamp,
+  setDoc,
   updateDoc,
 } from "firebase/firestore";
 
 import { db } from "../firebase/config";
 import Loading from "../components/Loading";
+
+import {
+  requestNotificationPermission,
+  scheduleCalendarNotification,
+  cancelCalendarNotification,
+} from "../utils/notifications";
 
 // ===========================================================
 // HELPERS
@@ -41,25 +48,17 @@ import Loading from "../components/Loading";
 function getToday() {
   const date = new Date();
 
-  const year = date.getFullYear();
-
-  const month = String(
+  return `${date.getFullYear()}-${String(
     date.getMonth() + 1
-  ).padStart(2, "0");
-
-  const day = String(
+  ).padStart(2, "0")}-${String(
     date.getDate()
-  ).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
+  ).padStart(2, "0")}`;
 }
 
 function formatDate(dateString) {
   if (!dateString) return "";
 
-  const date = new Date(
-    `${dateString}T00:00:00`
-  );
+  const date = new Date(`${dateString}T00:00:00`);
 
   if (Number.isNaN(date.getTime())) {
     return dateString;
@@ -76,9 +75,7 @@ function formatDate(dateString) {
 function formatShortDate(dateString) {
   if (!dateString) return "";
 
-  const date = new Date(
-    `${dateString}T00:00:00`
-  );
+  const date = new Date(`${dateString}T00:00:00`);
 
   if (Number.isNaN(date.getTime())) {
     return dateString;
@@ -94,8 +91,7 @@ function formatShortDate(dateString) {
 function formatTime(time) {
   if (!time) return "";
 
-  const [hours, minutes] =
-    time.split(":").map(Number);
+  const [hours, minutes] = time.split(":").map(Number);
 
   if (
     Number.isNaN(hours) ||
@@ -122,30 +118,139 @@ function dateKey(year, month, day) {
   )}-${String(day).padStart(2, "0")}`;
 }
 
+function dateToKey(date) {
+  return dateKey(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate()
+  );
+}
+
+function getEventStatus(event) {
+  return event.status || "upcoming";
+}
+
+// ===========================================================
+// OFFLINE BACKUP
+// ===========================================================
+
+function getCalendarStorageKey(uid) {
+  return `my-dashboard-${uid}-calendar`;
+}
+
+function loadCalendarBackup(uid) {
+  if (!uid) return [];
+
+  try {
+    const raw = localStorage.getItem(
+      getCalendarStorageKey(uid)
+    );
+
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+
+    return Array.isArray(parsed)
+      ? parsed
+      : [];
+  } catch (error) {
+    console.warn(
+      "Calendar local backup read error:",
+      error
+    );
+
+    return [];
+  }
+}
+
+function saveCalendarBackup(uid, events) {
+  if (!uid) return;
+
+  try {
+    localStorage.setItem(
+      getCalendarStorageKey(uid),
+      JSON.stringify(events)
+    );
+  } catch (error) {
+    console.warn(
+      "Calendar local backup write error:",
+      error
+    );
+  }
+}
+
+function sortEvents(events) {
+  return [...events].sort((a, b) => {
+    const dateA = `${a.date || ""} ${
+      a.time || ""
+    }`;
+
+    const dateB = `${b.date || ""} ${
+      b.time || ""
+    }`;
+
+    return dateA.localeCompare(dateB);
+  });
+}
+
+// ===========================================================
+// COLOURS
+// ===========================================================
+
 function getColorClasses(color) {
   const colors = {
     blue: {
-      dot: "bg-blue-400",
+      dot: "bg-blue-500",
       bg: "bg-blue-500/10",
-      border: "border-blue-400/30",
+      border: "border-blue-400/25",
       text: "text-blue-300",
-      ring: "ring-blue-400/30",
+      strong: "bg-blue-500",
+      glow: "shadow-blue-500/20",
     },
 
     green: {
-      dot: "bg-green-400",
-      bg: "bg-green-500/10",
-      border: "border-green-400/30",
-      text: "text-green-300",
-      ring: "ring-green-400/30",
+      dot: "bg-emerald-500",
+      bg: "bg-emerald-500/10",
+      border: "border-emerald-400/25",
+      text: "text-emerald-300",
+      strong: "bg-emerald-500",
+      glow: "shadow-emerald-500/20",
     },
 
     purple: {
-      dot: "bg-purple-400",
+      dot: "bg-purple-500",
       bg: "bg-purple-500/10",
-      border: "border-purple-400/30",
+      border: "border-purple-400/25",
       text: "text-purple-300",
-      ring: "ring-purple-400/30",
+      strong: "bg-purple-500",
+      glow: "shadow-purple-500/20",
+    },
+
+    orange: {
+      dot: "bg-orange-500",
+      bg: "bg-orange-500/10",
+      border: "border-orange-400/25",
+      text: "text-orange-300",
+      strong: "bg-orange-500",
+      glow: "shadow-orange-500/20",
+    },
+
+    pink: {
+      dot: "bg-pink-500",
+      bg: "bg-pink-500/10",
+      border: "border-pink-400/25",
+      text: "text-pink-300",
+      strong: "bg-pink-500",
+      glow: "shadow-pink-500/20",
+    },
+
+    red: {
+      dot: "bg-red-500",
+      bg: "bg-red-500/10",
+      border: "border-red-400/25",
+      text: "text-red-300",
+      strong: "bg-red-500",
+      glow: "shadow-red-500/20",
     },
   };
 
@@ -157,9 +262,9 @@ function getCategoryColor(category) {
     Work: "blue",
     Personal: "green",
     Fitness: "purple",
-    Travel: "blue",
-    Important: "purple",
-    Other: "green",
+    Travel: "orange",
+    Important: "red",
+    Other: "pink",
   };
 
   return colors[category] || "blue";
@@ -174,39 +279,22 @@ function getMonthName(date) {
 
 function getWeekDays(date) {
   const current = new Date(date);
-
   const day = current.getDay();
 
   const start = new Date(current);
 
-  start.setDate(
-    current.getDate() - day
-  );
+  start.setDate(current.getDate() - day);
 
   return Array.from(
     { length: 7 },
     (_, index) => {
       const item = new Date(start);
 
-      item.setDate(
-        start.getDate() + index
-      );
+      item.setDate(start.getDate() + index);
 
       return item;
     }
   );
-}
-
-function dateToKey(date) {
-  return dateKey(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate()
-  );
-}
-
-function getEventStatus(event) {
-  return event.status || "upcoming";
 }
 
 // ===========================================================
@@ -215,43 +303,28 @@ function getEventStatus(event) {
 
 export default function Calendar({ user }) {
   const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
-  const [loading, setLoading] =
-    useState(true);
-
-  const [saving, setSaving] =
-    useState(false);
-
-  const [deletingId, setDeletingId] =
-    useState(null);
-
-  const [showForm, setShowForm] =
-    useState(false);
-
+  const [showForm, setShowForm] = useState(false);
   const [showAnalytics, setShowAnalytics] =
     useState(false);
 
-  const [editingId, setEditingId] =
-    useState(null);
+  const [editingId, setEditingId] = useState(null);
 
-  const [search, setSearch] =
-    useState("");
-
+  const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] =
     useState("all");
-
   const [statusFilter, setStatusFilter] =
     useState("all");
 
-  const [view, setView] =
-    useState("month");
+  const [view, setView] = useState("month");
 
   const today = getToday();
 
-  const todayDate = new Date();
-
   const [currentDate, setCurrentDate] =
-    useState(todayDate);
+    useState(new Date());
 
   const [selectedDate, setSelectedDate] =
     useState(today);
@@ -267,14 +340,14 @@ export default function Calendar({ user }) {
     description: "",
     location: "",
     category: "Personal",
-    color: "blue",
+    color: "green",
     repeat: "none",
     reminder: "none",
     status: "upcoming",
   });
 
   // =========================================================
-  // FIRESTORE
+  // FIRESTORE + OFFLINE CACHE
   // =========================================================
 
   useEffect(() => {
@@ -284,6 +357,8 @@ export default function Calendar({ user }) {
       return;
     }
 
+    let mounted = true;
+
     const calendarRef = collection(
       db,
       "users",
@@ -291,30 +366,120 @@ export default function Calendar({ user }) {
       "calendar"
     );
 
+    const loadOfflineData = async () => {
+      try {
+        const cacheSnapshot =
+          await getDocsFromCache(
+            calendarRef
+          );
+
+        if (!mounted) return;
+
+        const cachedData =
+          cacheSnapshot.docs.map((item) => ({
+            id: item.id,
+            ...item.data(),
+          }));
+
+        const localBackup =
+          loadCalendarBackup(user.uid);
+
+        if (cachedData.length > 0) {
+          const sorted = sortEvents(
+            cachedData
+          );
+
+          setEvents(sorted);
+          saveCalendarBackup(
+            user.uid,
+            sorted
+          );
+        } else if (
+          localBackup.length > 0
+        ) {
+          setEvents(
+            sortEvents(localBackup)
+          );
+        }
+      } catch (error) {
+        console.warn(
+          "Calendar cache read error:",
+          error
+        );
+
+        const localBackup =
+          loadCalendarBackup(user.uid);
+
+        if (
+          mounted &&
+          localBackup.length > 0
+        ) {
+          setEvents(
+            sortEvents(localBackup)
+          );
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadOfflineData();
+
     const unsubscribe = onSnapshot(
       calendarRef,
+      {
+        includeMetadataChanges: true,
+      },
       (snapshot) => {
+        if (!mounted) return;
+
         const data =
           snapshot.docs.map((item) => ({
             id: item.id,
             ...item.data(),
           }));
 
-        data.sort((a, b) => {
-          const dateA =
-            `${a.date || ""} ${
-              a.time || ""
-            }`;
+        const localBackup =
+          loadCalendarBackup(user.uid);
 
-          const dateB =
-            `${b.date || ""} ${
-              b.time || ""
-            }`;
+        /*
+         * If Firestore gives an empty cached snapshot
+         * while we already have local backup data,
+         * do not destroy the local calendar.
+         */
+        if (
+          data.length === 0 &&
+          snapshot.metadata.fromCache &&
+          localBackup.length > 0
+        ) {
+          setEvents(
+            sortEvents(localBackup)
+          );
+          setLoading(false);
+          return;
+        }
 
-          return dateA.localeCompare(dateB);
-        });
+        const sorted =
+          sortEvents(data);
 
-        setEvents(data);
+        setEvents(sorted);
+
+        /*
+         * Save every useful Firestore snapshot
+         * to localStorage as a second offline layer.
+         */
+        if (
+          sorted.length > 0 ||
+          !snapshot.metadata.fromCache
+        ) {
+          saveCalendarBackup(
+            user.uid,
+            sorted
+          );
+        }
+
         setLoading(false);
       },
       (error) => {
@@ -323,11 +488,28 @@ export default function Calendar({ user }) {
           error
         );
 
-        setLoading(false);
+        const localBackup =
+          loadCalendarBackup(user.uid);
+
+        if (
+          mounted &&
+          localBackup.length > 0
+        ) {
+          setEvents(
+            sortEvents(localBackup)
+          );
+        }
+
+        if (mounted) {
+          setLoading(false);
+        }
       }
     );
 
-    return () => unsubscribe();
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, [user?.uid]);
 
   // =========================================================
@@ -335,11 +517,8 @@ export default function Calendar({ user }) {
   // =========================================================
 
   const calendarDays = useMemo(() => {
-    const year =
-      currentDate.getFullYear();
-
-    const month =
-      currentDate.getMonth();
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
 
     const firstDay = new Date(
       year,
@@ -347,42 +526,32 @@ export default function Calendar({ user }) {
       1
     ).getDay();
 
-    const daysInMonth =
-      new Date(
-        year,
-        month + 1,
-        0
-      ).getDate();
+    const daysInMonth = new Date(
+      year,
+      month + 1,
+      0
+    ).getDate();
 
-    const previousMonthDays =
-      new Date(
-        year,
-        month,
-        0
-      ).getDate();
+    const previousMonthDays = new Date(
+      year,
+      month,
+      0
+    ).getDate();
 
     const days = [];
 
-    for (
-      let i = firstDay - 1;
-      i >= 0;
-      i--
-    ) {
-      const day =
-        previousMonthDays - i;
+    for (let i = firstDay - 1; i >= 0; i--) {
+      const day = previousMonthDays - i;
 
-      const previousDate =
-        new Date(
-          year,
-          month - 1,
-          day
-        );
+      const previousDate = new Date(
+        year,
+        month - 1,
+        day
+      );
 
       days.push({
         day,
-        date: dateToKey(
-          previousDate
-        ),
+        date: dateToKey(previousDate),
         currentMonth: false,
       });
     }
@@ -392,12 +561,11 @@ export default function Calendar({ user }) {
       day <= daysInMonth;
       day++
     ) {
-      const current =
-        new Date(
-          year,
-          month,
-          day
-        );
+      const current = new Date(
+        year,
+        month,
+        day
+      );
 
       days.push({
         day,
@@ -409,12 +577,11 @@ export default function Calendar({ user }) {
     let nextDay = 1;
 
     while (days.length < 42) {
-      const nextDate =
-        new Date(
-          year,
-          month + 1,
-          nextDay
-        );
+      const nextDate = new Date(
+        year,
+        month + 1,
+        nextDay
+      );
 
       days.push({
         day: nextDay,
@@ -453,7 +620,8 @@ export default function Calendar({ user }) {
 
       const matchesStatus =
         statusFilter === "all" ||
-        getEventStatus(event) === statusFilter;
+        getEventStatus(event) ===
+          statusFilter;
 
       return (
         matchesSearch &&
@@ -504,19 +672,18 @@ export default function Calendar({ user }) {
             "cancelled"
       )
       .sort((a, b) => {
-        const dateA =
-          `${a.date} ${a.time || ""}`;
+        const dateA = `${a.date} ${
+          a.time || ""
+        }`;
 
-        const dateB =
-          `${b.date} ${b.time || ""}`;
+        const dateB = `${b.date} ${
+          b.time || ""
+        }`;
 
         return dateA.localeCompare(dateB);
       })
       .slice(0, 6);
-  }, [
-    filteredEvents,
-    today,
-  ]);
+  }, [filteredEvents, today]);
 
   // =========================================================
   // WEEK
@@ -532,45 +699,37 @@ export default function Calendar({ user }) {
   // =========================================================
 
   const todayEvents = events.filter(
-    (event) =>
-      event.date === today
+    (event) => event.date === today
   );
 
-  const upcomingCount =
-    events.filter(
-      (event) =>
-        event.date &&
-        event.date >= today &&
-        getEventStatus(event) !==
-          "cancelled"
-    ).length;
+  const upcomingCount = events.filter(
+    (event) =>
+      event.date &&
+      event.date >= today &&
+      getEventStatus(event) !==
+        "cancelled"
+  ).length;
 
-  const completedCount =
-    events.filter(
-      (event) =>
-        getEventStatus(event) ===
-        "completed"
-    ).length;
+  const completedCount = events.filter(
+    (event) =>
+      getEventStatus(event) ===
+      "completed"
+  ).length;
 
-  const monthEventCount =
-    events.filter((event) => {
+  const monthEventCount = events.filter(
+    (event) => {
       if (!event.date) return false;
 
-      const [
-        year,
-        month,
-      ] =
-        event.date
-          .split("-")
-          .map(Number);
+      const [year, month] =
+        event.date.split("-").map(Number);
 
       return (
-        year ===
-          currentDate.getFullYear() &&
+        year === currentDate.getFullYear() &&
         month ===
           currentDate.getMonth() + 1
       );
-    }).length;
+    }
+  ).length;
 
   // =========================================================
   // NAVIGATION
@@ -584,6 +743,23 @@ export default function Calendar({ user }) {
           currentDate.getMonth() - 1,
           1
         )
+      );
+
+      return;
+    }
+
+    if (view === "day") {
+      const date = new Date(
+        currentDate
+      );
+
+      date.setDate(
+        date.getDate() - 1
+      );
+
+      setCurrentDate(date);
+      setSelectedDate(
+        dateToKey(date)
       );
 
       return;
@@ -608,6 +784,23 @@ export default function Calendar({ user }) {
           currentDate.getMonth() + 1,
           1
         )
+      );
+
+      return;
+    }
+
+    if (view === "day") {
+      const date = new Date(
+        currentDate
+      );
+
+      date.setDate(
+        date.getDate() + 1
+      );
+
+      setCurrentDate(date);
+      setSelectedDate(
+        dateToKey(date)
       );
 
       return;
@@ -641,6 +834,16 @@ export default function Calendar({ user }) {
       value,
     } = event.target;
 
+    if (name === "category") {
+      setForm((previous) => ({
+        ...previous,
+        category: value,
+        color: getCategoryColor(value),
+      }));
+
+      return;
+    }
+
     setForm((previous) => ({
       ...previous,
       [name]: value,
@@ -654,13 +857,12 @@ export default function Calendar({ user }) {
 
     setForm({
       title: "",
-      date:
-        selected || getToday(),
+      date: selected || getToday(),
       time: "",
       description: "",
       location: "",
       category: "Personal",
-      color: "blue",
+      color: "green",
       repeat: "none",
       reminder: "none",
       status: "upcoming",
@@ -710,28 +912,80 @@ export default function Calendar({ user }) {
       description: "",
       location: "",
       category: "Personal",
-      color: "blue",
+      color: "green",
       repeat: "none",
       reminder: "none",
       status: "upcoming",
     });
 
     setShowForm(false);
+    setSaving(false);
   };
 
   // =========================================================
-  // SAVE
+  // NOTIFICATION HELPERS
   // =========================================================
 
-  const handleSubmit = async (
-    event
+  const scheduleEventReminder = async (
+    eventId,
+    eventData
   ) => {
+    if (!eventId) return;
+
+    try {
+      /*
+       * Notifications are intentionally handled
+       * separately from Firestore saving.
+       */
+      await cancelCalendarNotification(
+        eventId
+      );
+
+      if (
+        !eventData.reminder ||
+        eventData.reminder === "none"
+      ) {
+        return;
+      }
+
+      if (
+        !eventData.date ||
+        !eventData.time
+      ) {
+        return;
+      }
+
+      if (
+        eventData.status &&
+        eventData.status !== "upcoming"
+      ) {
+        return;
+      }
+
+      await scheduleCalendarNotification(
+        eventId,
+        {
+          ...eventData,
+          id: eventId,
+        }
+      );
+    } catch (error) {
+      console.error(
+        "Calendar notification error:",
+        error
+      );
+    }
+  };
+
+  // =========================================================
+  // SAVE EVENT - OFFLINE FIRST
+  // =========================================================
+
+  const handleSubmit = async (event) => {
     event.preventDefault();
 
     if (!user?.uid) {
-      alert(
-        "You are not logged in."
-      );
+      alert("You are not logged in.");
       return;
     }
 
@@ -752,96 +1006,205 @@ export default function Calendar({ user }) {
       return;
     }
 
+    if (
+      form.reminder !== "none" &&
+      !form.time
+    ) {
+      alert(
+        "Please select event time for reminders."
+      );
+      return;
+    }
+
+    /*
+     * We no longer wait for Firestore.
+     * This prevents "Saving..." from getting stuck
+     * when the phone is offline.
+     */
     setSaving(true);
 
-    try {
-      const calendarRef =
-        collection(
-          db,
-          "users",
-          user.uid,
-          "calendar"
+    const calendarRef = collection(
+      db,
+      "users",
+      user.uid,
+      "calendar"
+    );
+
+    const now = new Date().toISOString();
+
+    const localEventData = {
+      title,
+      date: form.date,
+      time: form.time || "",
+      description:
+        form.description.trim(),
+      location:
+        form.location.trim(),
+      category: form.category,
+      color: form.color,
+      repeat: form.repeat,
+      reminder: form.reminder,
+      status: form.status,
+      updatedAt: now,
+    };
+
+    // =======================================================
+    // EDIT
+    // =======================================================
+
+    if (editingId) {
+      const eventId = editingId;
+
+      const updatedEvents =
+        sortEvents(
+          events.map((item) =>
+            item.id === eventId
+              ? {
+                  ...item,
+                  ...localEventData,
+                }
+              : item
+          )
         );
 
-      const eventData = {
-        title,
-        date: form.date,
-        time: form.time || "",
-        description:
-          form.description.trim(),
-        location:
-          form.location.trim(),
-        category:
-          form.category,
-        color:
-          form.color,
-        repeat:
-          form.repeat,
-        reminder:
-          form.reminder,
-        status:
-          form.status,
-        updatedAt:
-          serverTimestamp(),
-      };
+      /*
+       * 1. Update UI immediately
+       * 2. Save local backup immediately
+       * 3. Close modal immediately
+       */
+      setEvents(updatedEvents);
 
-      if (editingId) {
-        await updateDoc(
-          doc(
-            db,
-            "users",
-            user.uid,
-            "calendar",
-            editingId
-          ),
-          eventData
-        );
-      } else {
-        await addDoc(
-          calendarRef,
-          {
-            ...eventData,
-            createdAt:
-              serverTimestamp(),
-          }
-        );
-      }
-
-      setSelectedDate(
-        form.date
+      saveCalendarBackup(
+        user.uid,
+        updatedEvents
       );
 
-      const selected =
-        new Date(
-          `${form.date}T00:00:00`
-        );
+      setSelectedDate(form.date);
 
       setCurrentDate(
-        selected
+        new Date(
+          `${form.date}T00:00:00`
+        )
       );
 
       resetForm();
-    } catch (error) {
-      console.error(
-        "Calendar save error:",
-        error
+
+      /*
+       * Firestore update runs in background.
+       * It will be queued by Firestore when offline.
+       */
+      void updateDoc(
+        doc(
+          db,
+          "users",
+          user.uid,
+          "calendar",
+          eventId
+        ),
+        {
+          ...localEventData,
+          updatedAt:
+            serverTimestamp(),
+        }
+      ).catch((error) => {
+        console.error(
+          "Calendar background update error:",
+          error
+        );
+      });
+
+      /*
+       * Notification is also non-blocking.
+       */
+      void scheduleEventReminder(
+        eventId,
+        localEventData
       );
 
-      alert(
-        "Could not save the event."
-      );
-    } finally {
-      setSaving(false);
+      return;
     }
+
+    // =======================================================
+    // CREATE
+    // =======================================================
+
+    /*
+     * Generate the document ID locally.
+     * This means the event does not need to wait
+     * for Firestore before appearing in the app.
+     */
+    const eventRef = doc(
+      calendarRef
+    );
+
+    const eventId = eventRef.id;
+
+    const newEvent = {
+      id: eventId,
+      ...localEventData,
+      createdAt: now,
+    };
+
+    const updatedEvents =
+      sortEvents([
+        ...events,
+        newEvent,
+      ]);
+
+    /*
+     * 1. Add to UI immediately
+     * 2. Save local backup
+     * 3. Close modal immediately
+     */
+    setEvents(updatedEvents);
+
+    saveCalendarBackup(
+      user.uid,
+      updatedEvents
+    );
+
+    setSelectedDate(form.date);
+
+    setCurrentDate(
+      new Date(
+        `${form.date}T00:00:00`
+      )
+    );
+
+    resetForm();
+
+    /*
+     * Firestore write happens in background.
+     *
+     * If online -> sends normally.
+     * If offline -> Firestore queues it.
+     */
+    void setDoc(eventRef, {
+      ...localEventData,
+      createdAt:
+        serverTimestamp(),
+    }).catch((error) => {
+      console.error(
+        "Calendar background create error:",
+        error
+      );
+    });
+
+    /*
+     * Notification scheduling does not block
+     * the event save.
+     */
+    void scheduleEventReminder(
+      eventId,
+      localEventData
+    );
   };
 
   // =========================================================
-  // DELETE
+  // DELETE - OFFLINE FIRST
   // =========================================================
 
-  const handleDelete = async (
-    id
-  ) => {
+  const handleDelete = async (id) => {
     if (!user?.uid) return;
 
     const confirmed =
@@ -853,61 +1216,147 @@ export default function Calendar({ user }) {
 
     setDeletingId(id);
 
-    try {
-      await deleteDoc(
-        doc(
-          db,
-          "users",
-          user.uid,
-          "calendar",
-          id
-        )
-      );
-    } catch (error) {
-      console.error(
-        "Calendar delete error:",
-        error
+    /*
+     * Remove from UI immediately.
+     */
+    const updatedEvents =
+      events.filter(
+        (event) => event.id !== id
       );
 
-      alert(
-        "Could not delete the event."
+    setEvents(updatedEvents);
+
+    /*
+     * Save local backup immediately.
+     */
+    saveCalendarBackup(
+      user.uid,
+      updatedEvents
+    );
+
+    /*
+     * Clear deleting state immediately.
+     */
+    setDeletingId(null);
+
+    /*
+     * Notification cancellation is non-blocking.
+     */
+    void cancelCalendarNotification(
+      id
+    ).catch((error) => {
+      console.error(
+        "Calendar notification cancel error:",
+        error
       );
-    } finally {
-      setDeletingId(null);
-    }
+    });
+
+    /*
+     * Firestore delete happens in background.
+     * Offline Firestore will queue this delete.
+     */
+    void deleteDoc(
+      doc(
+        db,
+        "users",
+        user.uid,
+        "calendar",
+        id
+      )
+    ).catch((error) => {
+      console.error(
+        "Calendar background delete error:",
+        error
+      );
+    });
   };
 
   // =========================================================
-  // STATUS UPDATE
+  // STATUS - OFFLINE FIRST
   // =========================================================
 
   const updateStatus = async (
     event,
     status
   ) => {
-    try {
-      await updateDoc(
-        doc(
-          db,
-          "users",
-          user.uid,
-          "calendar",
-          event.id
-        ),
-        {
-          status,
-          updatedAt:
-            serverTimestamp(),
-        }
-      );
-    } catch (error) {
-      console.error(
-        "Status update error:",
-        error
+    if (!user?.uid) return;
+
+    /*
+     * Update UI immediately.
+     */
+    const updatedEvents =
+      sortEvents(
+        events.map((item) =>
+          item.id === event.id
+            ? {
+                ...item,
+                status,
+                updatedAt:
+                  new Date().toISOString(),
+              }
+            : item
+        )
       );
 
-      alert(
-        "Could not update status."
+    setEvents(updatedEvents);
+
+    /*
+     * Save local backup.
+     */
+    saveCalendarBackup(
+      user.uid,
+      updatedEvents
+    );
+
+    /*
+     * Firestore update is background-only.
+     */
+    void updateDoc(
+      doc(
+        db,
+        "users",
+        user.uid,
+        "calendar",
+        event.id
+      ),
+      {
+        status,
+        updatedAt:
+          serverTimestamp(),
+      }
+    ).catch((error) => {
+      console.error(
+        "Status background update error:",
+        error
+      );
+    });
+
+    /*
+     * Notifications never block status update.
+     */
+    if (
+      status === "completed" ||
+      status === "cancelled"
+    ) {
+      void cancelCalendarNotification(
+        event.id
+      ).catch((error) => {
+        console.error(
+          "Calendar notification cancel error:",
+          error
+        );
+      });
+
+      return;
+    }
+
+    if (status === "upcoming") {
+      void scheduleEventReminder(
+        event.id,
+        {
+          ...event,
+          status: "upcoming",
+        }
       );
     }
   };
@@ -916,9 +1365,7 @@ export default function Calendar({ user }) {
   // MAPS
   // =========================================================
 
-  const openMaps = (
-    location
-  ) => {
+  const openMaps = (location) => {
     if (!location) return;
 
     const url =
@@ -934,36 +1381,32 @@ export default function Calendar({ user }) {
   };
 
   // =========================================================
-  // REMINDER
+  // NOTIFICATION PERMISSION
   // =========================================================
 
-  const requestNotificationPermission =
+  const handleNotificationPermission =
     async () => {
-      if (
-        !("Notification" in window)
-      ) {
-        alert(
-          "Your browser does not support notifications."
+      try {
+        const granted =
+          await requestNotificationPermission();
+
+        if (granted) {
+          alert(
+            "Calendar notifications enabled."
+          );
+        } else {
+          alert(
+            "Please allow notifications from your phone settings."
+          );
+        }
+      } catch (error) {
+        console.error(
+          "Notification permission error:",
+          error
         );
-        return;
-      }
 
-      if (
-        Notification.permission ===
-        "granted"
-      ) {
         alert(
-          "Notifications are already enabled."
-        );
-        return;
-      }
-
-      const permission =
-        await Notification.requestPermission();
-
-      if (permission === "granted") {
-        alert(
-          "Calendar notifications enabled."
+          "Could not enable notifications."
         );
       }
     };
@@ -974,9 +1417,7 @@ export default function Calendar({ user }) {
 
   if (loading) {
     return (
-      <Loading
-        text="Loading calendar..."
-      />
+      <Loading text="Loading calendar..." />
     );
   }
 
@@ -989,35 +1430,33 @@ export default function Calendar({ user }) {
 
       {/* HEADER */}
 
-      <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div className="mb-4 flex items-center justify-between gap-3 sm:mb-6">
 
-        <div>
+        <div className="min-w-0">
 
           <div className="flex items-center gap-2">
 
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10">
-              <CalendarDays
-                size={18}
-              />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-red-500/10 text-red-400">
+              <CalendarDays size={18} />
             </div>
 
-            <p className="text-sm text-white/40">
-              Schedule
-            </p>
+            <div className="min-w-0">
+
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/30">
+                Schedule
+              </p>
+
+              <h1 className="mt-0.5 text-2xl font-bold tracking-tight sm:text-3xl">
+                Calendar
+              </h1>
+
+            </div>
 
           </div>
 
-          <h1 className="mt-2 text-3xl font-bold tracking-tight">
-            Calendar
-          </h1>
-
-          <p className="mt-2 text-sm text-white/30">
-            Plan your days and manage your events.
-          </p>
-
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="hidden flex-wrap gap-2 sm:flex">
 
           <button
             type="button"
@@ -1028,16 +1467,14 @@ export default function Calendar({ user }) {
             }
             className="flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm font-medium text-white/60 transition hover:bg-white/10 hover:text-white"
           >
-            <BarChart3
-              size={17}
-            />
+            <BarChart3 size={17} />
             Analytics
           </button>
 
           <button
             type="button"
             onClick={
-              requestNotificationPermission
+              handleNotificationPermission
             }
             className="flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm font-medium text-white/60 transition hover:bg-white/10 hover:text-white"
           >
@@ -1060,34 +1497,458 @@ export default function Calendar({ user }) {
 
       </div>
 
+      {/* MONTH VIEW */}
+
+      {view === "month" && (
+        <div className="mb-4 overflow-hidden rounded-[28px] border border-white/[0.10] bg-gradient-to-br from-white/[0.075] via-white/[0.04] to-white/[0.025] shadow-2xl shadow-black/30 backdrop-blur-3xl sm:mb-6 sm:rounded-[32px]">
+
+          <div className="border-b border-white/[0.07] px-4 py-4 sm:px-6 sm:py-6">
+
+            <div className="flex items-center justify-between gap-3">
+
+              <div className="min-w-0">
+
+                <p className="text-[9px] font-semibold uppercase tracking-[0.22em] text-white/30 sm:text-[10px]">
+                  My Calendar
+                </p>
+
+                <h2 className="mt-1 truncate text-[22px] font-bold tracking-tight sm:text-3xl">
+                  {getMonthName(
+                    currentDate
+                  )}
+                </h2>
+
+                <p className="mt-1 text-[10px] text-white/30 sm:text-xs">
+                  {monthEventCount} event
+                  {monthEventCount !==
+                  1
+                    ? "s"
+                    : ""}{" "}
+                  this month
+                </p>
+
+              </div>
+
+              <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+
+                <button
+                  type="button"
+                  onClick={goToday}
+                  className="rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-[10px] font-semibold text-white/70 transition hover:bg-white/10 hover:text-white sm:px-4 sm:py-2.5 sm:text-xs"
+                >
+                  Today
+                </button>
+
+                <button
+                  type="button"
+                  onClick={
+                    previousPeriod
+                  }
+                  aria-label="Previous month"
+                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] text-white/55 transition hover:bg-white/10 hover:text-white sm:h-10 sm:w-10"
+                >
+                  <ChevronLeft size={17} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={
+                    nextPeriod
+                  }
+                  aria-label="Next month"
+                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] text-white/55 transition hover:bg-white/10 hover:text-white sm:h-10 sm:w-10"
+                >
+                  <ChevronRight size={17} />
+                </button>
+
+              </div>
+
+            </div>
+
+          </div>
+
+          <div className="grid grid-cols-7 border-b border-white/[0.07] bg-white/[0.018]">
+
+            {[
+              "Sun",
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri",
+              "Sat",
+            ].map(
+              (day, index) => (
+                <div
+                  key={day}
+                  className={`flex h-9 items-center justify-center text-[9px] font-semibold uppercase tracking-wider sm:h-11 sm:text-[10px] ${
+                    index === 0
+                      ? "text-red-400"
+                      : index === 6
+                      ? "text-blue-300/60"
+                      : "text-white/35"
+                  }`}
+                >
+                  <span className="sm:hidden">
+                    {day.slice(0, 1)}
+                  </span>
+
+                  <span className="hidden sm:inline">
+                    {day}
+                  </span>
+                </div>
+              )
+            )}
+
+          </div>
+
+          <div className="grid grid-cols-7">
+
+            {calendarDays.map(
+              (
+                calendarDay,
+                index
+              ) => {
+                const dayEvents =
+                  filteredEvents.filter(
+                    (event) =>
+                      event.date ===
+                      calendarDay.date
+                  );
+
+                const selected =
+                  calendarDay.date ===
+                  selectedDate;
+
+                const isToday =
+                  calendarDay.date ===
+                  today;
+
+                const column =
+                  index % 7;
+
+                const isSunday =
+                  column === 0;
+
+                const isSaturday =
+                  column === 6;
+
+                return (
+                  <button
+                    key={`${calendarDay.date}-${index}`}
+                    type="button"
+                    onClick={() => {
+                      setSelectedDate(
+                        calendarDay.date
+                      );
+
+                      if (
+                        !calendarDay.currentMonth
+                      ) {
+                        setCurrentDate(
+                          new Date(
+                            `${calendarDay.date}T00:00:00`
+                          )
+                        );
+                      }
+                    }}
+                    className={`group relative flex min-h-[82px] flex-col items-center border-b border-r border-white/[0.055] px-1 py-2 transition-all duration-200 sm:min-h-[112px] sm:p-2.5 lg:min-h-[122px] ${
+                      selected
+                        ? "bg-white/[0.075]"
+                        : "hover:bg-white/[0.035]"
+                    } ${
+                      !calendarDay.currentMonth
+                        ? "opacity-25"
+                        : ""
+                    }`}
+                  >
+
+                    {selected && (
+                      <span className="absolute left-1/2 top-0 h-[2px] w-7 -translate-x-1/2 rounded-full bg-white/80 sm:w-9" />
+                    )}
+
+                    <span
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[13px] font-medium leading-none transition-all sm:h-9 sm:w-9 sm:text-sm ${
+                        isToday
+                          ? "bg-red-500 text-white shadow-lg shadow-red-500/30"
+                          : selected
+                          ? "bg-white/[0.10] text-white"
+                          : isSunday
+                          ? "text-red-400"
+                          : isSaturday
+                          ? "text-blue-300/70"
+                          : "text-white/75"
+                      }`}
+                    >
+                      {calendarDay.day}
+                    </span>
+
+                    <div className="mt-2 flex min-h-[10px] max-w-full flex-wrap items-center justify-center gap-1">
+
+                      {dayEvents
+                        .slice(0, 4)
+                        .map(
+                          (event) => {
+                            const color =
+                              getColorClasses(
+                                event.color ||
+                                  getCategoryColor(
+                                    event.category
+                                  )
+                              );
+
+                            return (
+                              <span
+                                key={
+                                  event.id
+                                }
+                                className={`h-1.5 w-1.5 rounded-full ${color.dot} shadow-sm sm:h-2 sm:w-2`}
+                              />
+                            );
+                          }
+                        )}
+
+                      {dayEvents.length >
+                        4 && (
+                        <span className="text-[8px] font-semibold text-white/35">
+                          +
+                          {dayEvents.length -
+                            4}
+                        </span>
+                      )}
+
+                    </div>
+
+                    <div className="mt-1.5 hidden w-full space-y-1 sm:block">
+
+                      {dayEvents
+                        .slice(0, 2)
+                        .map(
+                          (event) => {
+                            const color =
+                              getColorClasses(
+                                event.color ||
+                                  getCategoryColor(
+                                    event.category
+                                  )
+                              );
+
+                            return (
+                              <div
+                                key={
+                                  event.id
+                                }
+                                className={`flex items-center gap-1.5 truncate rounded-md border px-1.5 py-1 text-left text-[9px] font-medium ${color.bg} ${color.border} ${color.text}`}
+                              >
+                                <span
+                                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${color.dot}`}
+                                />
+
+                                <span className="truncate">
+                                  {
+                                    event.title
+                                  }
+                                </span>
+                              </div>
+                            );
+                          }
+                        )}
+
+                      {dayEvents.length >
+                        2 && (
+                        <p className="px-1 text-[8px] font-medium text-white/30">
+                          +
+                          {dayEvents.length -
+                            2}{" "}
+                          more
+                        </p>
+                      )}
+
+                    </div>
+
+                  </button>
+                );
+              }
+            )}
+
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-white/[0.06] px-4 py-3 sm:px-6 sm:py-4">
+
+            {[
+              ["Work", "blue"],
+              ["Personal", "green"],
+              ["Fitness", "purple"],
+              ["Travel", "orange"],
+              ["Important", "red"],
+              ["Other", "pink"],
+            ].map(
+              ([label, color]) => {
+                const styles =
+                  getColorClasses(
+                    color
+                  );
+
+                return (
+                  <div
+                    key={label}
+                    className="flex items-center gap-1.5"
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${styles.dot}`}
+                    />
+
+                    <span className="text-[9px] text-white/30">
+                      {label}
+                    </span>
+                  </div>
+                );
+              }
+            )}
+
+          </div>
+
+        </div>
+      )}
+
+      {/* MOBILE ACTIONS */}
+
+      <div className="mb-5 grid grid-cols-3 gap-2 sm:hidden">
+
+        <button
+          type="button"
+          onClick={() =>
+            setShowAnalytics(
+              !showAnalytics
+            )
+          }
+          className={`flex min-h-[54px] flex-col items-center justify-center gap-1 rounded-2xl border text-[10px] font-medium transition ${
+            showAnalytics
+              ? "border-white/20 bg-white/10 text-white"
+              : "border-white/10 bg-white/[0.045] text-white/55"
+          }`}
+        >
+          <BarChart3 size={17} />
+          Analytics
+        </button>
+
+        <button
+          type="button"
+          onClick={
+            handleNotificationPermission
+          }
+          className="flex min-h-[54px] flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 bg-white/[0.045] text-[10px] font-medium text-white/55 transition hover:bg-white/10 hover:text-white"
+        >
+          <Bell size={17} />
+          Reminders
+        </button>
+
+        <button
+          type="button"
+          onClick={() =>
+            openAddForm()
+          }
+          className="flex min-h-[54px] flex-col items-center justify-center gap-1 rounded-2xl bg-white text-[10px] font-semibold text-black transition active:scale-[0.98]"
+        >
+          <Plus size={18} />
+          Add Event
+        </button>
+
+      </div>
+
+      {/* VIEW SWITCHER */}
+
+      <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-2.5 sm:flex-row sm:items-center sm:justify-between">
+
+        <div className="flex rounded-xl bg-white/[0.04] p-1">
+
+          {[
+            ["month", "Month"],
+            ["week", "Week"],
+            ["day", "Day"],
+          ].map(
+            ([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() =>
+                  setView(value)
+                }
+                className={`flex-1 rounded-lg px-4 py-2 text-xs font-medium transition sm:flex-none ${
+                  view === value
+                    ? "bg-white text-black shadow-sm"
+                    : "text-white/40 hover:text-white"
+                }`}
+              >
+                {label}
+              </button>
+            )
+          )}
+
+        </div>
+
+        <div className="flex items-center justify-between gap-2">
+
+          <button
+            type="button"
+            onClick={
+              previousPeriod
+            }
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-white/50 transition hover:bg-white/10 hover:text-white"
+          >
+            <ChevronLeft size={17} />
+          </button>
+
+          <button
+            type="button"
+            onClick={goToday}
+            className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-medium text-white/50 transition hover:bg-white/10 hover:text-white"
+          >
+            Today
+          </button>
+
+          <button
+            type="button"
+            onClick={
+              nextPeriod
+            }
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-white/50 transition hover:bg-white/10 hover:text-white"
+          >
+            <ChevronRight size={17} />
+          </button>
+
+        </div>
+
+      </div>
+
       {/* ANALYTICS */}
 
       {showAnalytics && (
-        <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
 
           <AnalyticsCard
             title="Total Events"
             value={events.length}
             icon={
-              <CalendarDays
-                size={18}
-              />
+              <CalendarDays size={18} />
             }
           />
 
           <AnalyticsCard
             title="Completed"
-            value={completedCount}
+            value={
+              completedCount
+            }
             icon={
-              <CheckCircle2
-                size={18}
-              />
+              <CheckCircle2 size={18} />
             }
           />
 
           <AnalyticsCard
             title="Upcoming"
-            value={upcomingCount}
+            value={
+              upcomingCount
+            }
             icon={
               <Clock size={18} />
             }
@@ -1095,11 +1956,11 @@ export default function Calendar({ user }) {
 
           <AnalyticsCard
             title="This Month"
-            value={monthEventCount}
+            value={
+              monthEventCount
+            }
             icon={
-              <BarChart3
-                size={18}
-              />
+              <BarChart3 size={18} />
             }
           />
 
@@ -1108,13 +1969,11 @@ export default function Calendar({ user }) {
 
       {/* STATS */}
 
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
 
         <CalendarStat
           icon={
-            <CalendarDays
-              size={18}
-            />
+            <CalendarDays size={18} />
           }
           title="Total Events"
           value={events.length}
@@ -1122,36 +1981,35 @@ export default function Calendar({ user }) {
 
         <CalendarStat
           icon={
-            <CheckCircle2
-              size={18}
-            />
+            <CheckCircle2 size={18} />
           }
           title="Today"
-          value={todayEvents.length}
+          value={
+            todayEvents.length
+          }
         />
 
         <CalendarStat
-          icon={
-            <Clock size={18} />
-          }
+          icon={<Clock size={18} />}
           title="Upcoming"
-          value={upcomingCount}
+          value={
+            upcomingCount
+          }
         />
 
         <CalendarStat
-          icon={
-            <List size={18}
-            />
-          }
+          icon={<List size={18} />}
           title="This Month"
-          value={monthEventCount}
+          value={
+            monthEventCount
+          }
         />
 
       </div>
 
-      {/* SEARCH + FILTERS */}
+      {/* SEARCH */}
 
-      <div className="mb-6 grid gap-3 lg:grid-cols-[1fr_auto_auto]">
+      <div className="mb-5 grid gap-3 lg:grid-cols-[1fr_auto_auto]">
 
         <div className="relative">
 
@@ -1175,7 +2033,9 @@ export default function Calendar({ user }) {
         </div>
 
         <select
-          value={categoryFilter}
+          value={
+            categoryFilter
+          }
           onChange={(event) =>
             setCategoryFilter(
               event.target.value
@@ -1186,28 +2046,36 @@ export default function Calendar({ user }) {
           <option value="all">
             All Categories
           </option>
+
           <option value="Work">
             Work
           </option>
+
           <option value="Personal">
             Personal
           </option>
+
           <option value="Fitness">
             Fitness
           </option>
+
           <option value="Travel">
             Travel
           </option>
+
           <option value="Important">
             Important
           </option>
+
           <option value="Other">
             Other
           </option>
         </select>
 
         <select
-          value={statusFilter}
+          value={
+            statusFilter
+          }
           onChange={(event) =>
             setStatusFilter(
               event.target.value
@@ -1218,12 +2086,15 @@ export default function Calendar({ user }) {
           <option value="all">
             All Status
           </option>
+
           <option value="upcoming">
             Upcoming
           </option>
+
           <option value="completed">
             Completed
           </option>
+
           <option value="cancelled">
             Cancelled
           </option>
@@ -1231,241 +2102,29 @@ export default function Calendar({ user }) {
 
       </div>
 
-      {/* VIEW SWITCHER */}
-
-      <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3 sm:flex-row sm:items-center sm:justify-between">
-
-        <div className="flex rounded-xl bg-white/[0.04] p-1">
-
-          {[
-            ["month", "Month"],
-            ["week", "Week"],
-            ["day", "Day"],
-          ].map(
-            ([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() =>
-                  setView(value)
-                }
-                className={`rounded-lg px-4 py-2 text-xs font-medium transition ${
-                  view === value
-                    ? "bg-white text-black"
-                    : "text-white/40 hover:text-white"
-                }`}
-              >
-                {label}
-              </button>
-            )
-          )}
-
-        </div>
-
-        <div className="flex items-center justify-between gap-2">
-
-          <button
-            type="button"
-            onClick={
-              previousPeriod
-            }
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-white/50 transition hover:bg-white/10 hover:text-white"
-          >
-            <ChevronLeft
-              size={17}
-            />
-          </button>
-
-          <button
-            type="button"
-            onClick={goToday}
-            className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-medium text-white/50 transition hover:bg-white/10 hover:text-white"
-          >
-            Today
-          </button>
-
-          <button
-            type="button"
-            onClick={nextPeriod}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-white/50 transition hover:bg-white/10 hover:text-white"
-          >
-            <ChevronRight
-              size={17}
-            />
-          </button>
-
-        </div>
-
-      </div>
-
-      {/* =====================================================
-          MONTH VIEW
-      ====================================================== */}
-
-      {view === "month" && (
-        <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-4 shadow-xl shadow-black/10 backdrop-blur-2xl sm:p-6">
-
-          <div className="mb-6">
-
-            <h2 className="text-lg font-semibold">
-              {getMonthName(
-                currentDate
-              )}
-            </h2>
-
-            <p className="mt-1 text-xs text-white/30">
-              {monthEventCount} event
-              {monthEventCount !== 1
-                ? "s"
-                : ""}{" "}
-              this month
-            </p>
-
-          </div>
-
-          <div className="mb-2 grid grid-cols-7">
-
-            {[
-              "Sun",
-              "Mon",
-              "Tue",
-              "Wed",
-              "Thu",
-              "Fri",
-              "Sat",
-            ].map((day) => (
-              <div
-                key={day}
-                className="py-2 text-center text-[10px] font-medium uppercase tracking-wider text-white/25 sm:text-xs"
-              >
-                {day}
-              </div>
-            ))}
-
-          </div>
-
-          <div className="grid grid-cols-7 gap-1 sm:gap-2">
-
-            {calendarDays.map(
-              (calendarDay) => {
-                const dayEvents =
-                  events.filter(
-                    (event) =>
-                      event.date ===
-                      calendarDay.date
-                  );
-
-                const selected =
-                  calendarDay.date ===
-                  selectedDate;
-
-                const isToday =
-                  calendarDay.date ===
-                  today;
-
-                return (
-                  <button
-                    key={
-                      calendarDay.date
-                    }
-                    type="button"
-                    onClick={() => {
-                      setSelectedDate(
-                        calendarDay.date
-                      );
-
-                      if (
-                        !calendarDay.currentMonth
-                      ) {
-                        const selectedObj =
-                          new Date(
-                            `${calendarDay.date}T00:00:00`
-                          );
-
-                        setCurrentDate(
-                          selectedObj
-                        );
-                      }
-                    }}
-                    className={`relative flex min-h-[72px] flex-col items-center rounded-xl border p-1.5 transition sm:min-h-[90px] sm:rounded-2xl sm:p-2 ${
-                      selected
-                        ? "border-white/30 bg-white/[0.10]"
-                        : "border-transparent hover:border-white/10 hover:bg-white/[0.05]"
-                    } ${
-                      calendarDay.currentMonth
-                        ? "text-white"
-                        : "text-white/15"
-                    }`}
-                  >
-
-                    <span
-                      className={`flex h-7 w-7 items-center justify-center rounded-full text-xs sm:h-8 sm:w-8 sm:text-sm ${
-                        isToday
-                          ? "bg-white font-bold text-black"
-                          : ""
-                      }`}
-                    >
-                      {
-                        calendarDay.day
-                      }
-                    </span>
-
-                    <div className="mt-1 flex max-w-full flex-wrap justify-center gap-1">
-
-                      {dayEvents
-                        .slice(
-                          0,
-                          3
-                        )
-                        .map(
-                          (event) => {
-                            const color =
-                              getColorClasses(
-                                event.color
-                              );
-
-                            return (
-                              <span
-                                key={
-                                  event.id
-                                }
-                                className={`h-1.5 w-1.5 rounded-full ${color.dot}`}
-                              />
-                            );
-                          }
-                        )}
-
-                      {dayEvents.length >
-                        3 && (
-                        <span className="text-[8px] text-white/40">
-                          +
-                          {dayEvents.length -
-                            3}
-                        </span>
-                      )}
-
-                    </div>
-
-                  </button>
-                );
-              }
-            )}
-
-          </div>
-
-        </div>
-      )}
-
-      {/* =====================================================
-          WEEK VIEW
-      ====================================================== */}
+      {/* WEEK VIEW */}
 
       {view === "week" && (
         <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-4 shadow-xl shadow-black/10 backdrop-blur-2xl">
 
-          <h2 className="mb-5 text-lg font-semibold">
-            Week Schedule
-          </h2>
+          <div className="mb-5 flex items-center justify-between">
+
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-white/25">
+                Weekly Schedule
+              </p>
+
+              <h2 className="mt-1 text-lg font-semibold">
+                Week Schedule
+              </h2>
+            </div>
+
+            <CalendarDays
+              size={18}
+              className="text-white/25"
+            />
+
+          </div>
 
           <div className="grid gap-3 md:grid-cols-7">
 
@@ -1477,11 +2136,15 @@ export default function Calendar({ user }) {
                 const dayEvents =
                   filteredEvents.filter(
                     (event) =>
-                      event.date === key
+                      event.date ===
+                      key
                   );
 
                 const isToday =
                   key === today;
+
+                const isSunday =
+                  day.getDay() === 0;
 
                 return (
                   <button
@@ -1493,33 +2156,50 @@ export default function Calendar({ user }) {
                       )
                     }
                     className={`min-h-[180px] rounded-2xl border p-3 text-left transition ${
-                      selectedDate === key
+                      selectedDate ===
+                      key
                         ? "border-white/30 bg-white/[0.08]"
                         : "border-white/10 bg-white/[0.02] hover:bg-white/[0.05]"
                     }`}
                   >
 
-                    <div className="mb-3">
+                    <div className="mb-3 flex items-center justify-between">
 
-                      <p className="text-[10px] uppercase text-white/25">
-                        {day.toLocaleDateString(
-                          "en-US",
-                          {
-                            weekday:
-                              "short",
-                          }
-                        )}
-                      </p>
+                      <div>
 
-                      <p
-                        className={`mt-1 text-xl font-bold ${
-                          isToday
-                            ? "text-white"
-                            : "text-white/70"
-                        }`}
-                      >
-                        {day.getDate()}
-                      </p>
+                        <p
+                          className={`text-[10px] uppercase ${
+                            isSunday
+                              ? "text-red-400"
+                              : "text-white/25"
+                          }`}
+                        >
+                          {day.toLocaleDateString(
+                            "en-US",
+                            {
+                              weekday:
+                                "short",
+                            }
+                          )}
+                        </p>
+
+                        <p
+                          className={`mt-1 text-xl font-bold ${
+                            isToday
+                              ? "text-red-400"
+                              : "text-white/70"
+                          }`}
+                        >
+                          {day.getDate()}
+                        </p>
+
+                      </div>
+
+                      {isToday && (
+                        <span className="rounded-full bg-red-500 px-2 py-1 text-[8px] font-bold text-white">
+                          TODAY
+                        </span>
+                      )}
 
                     </div>
 
@@ -1531,7 +2211,10 @@ export default function Calendar({ user }) {
                           (event) => {
                             const color =
                               getColorClasses(
-                                event.color
+                                event.color ||
+                                  getCategoryColor(
+                                    event.category
+                                  )
                               );
 
                             return (
@@ -1541,11 +2224,19 @@ export default function Calendar({ user }) {
                                 }
                                 className={`rounded-xl border p-2 ${color.bg} ${color.border}`}
                               >
-                                <p className="truncate text-[11px] font-medium">
-                                  {
-                                    event.title
-                                  }
-                                </p>
+                                <div className="flex items-center gap-1.5">
+
+                                  <span
+                                    className={`h-1.5 w-1.5 rounded-full ${color.dot}`}
+                                  />
+
+                                  <p className="truncate text-[11px] font-medium">
+                                    {
+                                      event.title
+                                    }
+                                  </p>
+
+                                </div>
 
                                 {event.time && (
                                   <p className="mt-1 text-[9px] text-white/30">
@@ -1554,6 +2245,7 @@ export default function Calendar({ user }) {
                                     )}
                                   </p>
                                 )}
+
                               </div>
                             );
                           }
@@ -1581,9 +2273,7 @@ export default function Calendar({ user }) {
         </div>
       )}
 
-      {/* =====================================================
-          DAY VIEW
-      ====================================================== */}
+      {/* DAY VIEW */}
 
       {view === "day" && (
         <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-xl shadow-black/10 backdrop-blur-2xl">
@@ -1672,12 +2362,10 @@ export default function Calendar({ user }) {
         </div>
       )}
 
-      {/* =====================================================
-          SELECTED DAY
-      ====================================================== */}
+      {/* SELECTED DAY */}
 
       {view !== "day" && (
-        <div className="mt-6 rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-xl shadow-black/10 backdrop-blur-2xl">
+        <div className="mt-5 rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-xl shadow-black/10 backdrop-blur-2xl">
 
           <div className="mb-5 flex items-start justify-between gap-3">
 
@@ -1763,11 +2451,9 @@ export default function Calendar({ user }) {
         </div>
       )}
 
-      {/* =====================================================
-          UPCOMING
-      ====================================================== */}
+      {/* UPCOMING */}
 
-      <div className="mt-6 rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-xl shadow-black/10 backdrop-blur-2xl">
+      <div className="mt-5 rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-xl shadow-black/10 backdrop-blur-2xl">
 
         <div className="mb-5 flex items-center justify-between">
 
@@ -1802,7 +2488,10 @@ export default function Calendar({ user }) {
               (event) => {
                 const color =
                   getColorClasses(
-                    event.color
+                    event.color ||
+                      getCategoryColor(
+                        event.category
+                      )
                   );
 
                 return (
@@ -1820,7 +2509,7 @@ export default function Calendar({ user }) {
                         )
                       );
                     }}
-                    className={`group flex items-center gap-3 rounded-2xl border p-4 text-left transition ${color.border} ${color.bg}`}
+                    className={`group flex items-center gap-3 rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 ${color.border} ${color.bg}`}
                   >
 
                     <div className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl bg-white/10">
@@ -1910,26 +2599,20 @@ export default function Calendar({ user }) {
 
       </div>
 
-      {/* MODAL */}
+      {/* EVENT MODAL */}
 
       {showForm && (
         <EventModal
           form={form}
           editingId={editingId}
           saving={saving}
-          onChange={
-            handleChange
-          }
-          onSubmit={
-            handleSubmit
-          }
-          onClose={
-            resetForm
-          }
+          onChange={handleChange}
+          onSubmit={handleSubmit}
+          onClose={resetForm}
         />
       )}
 
-      {/* MOBILE ADD */}
+      {/* MOBILE FLOATING ADD */}
 
       <button
         type="button"
@@ -2025,12 +2708,10 @@ function AnalyticsCard({
 }
 
 // ===========================================================
-// EMPTY
+// EMPTY EVENTS
 // ===========================================================
 
-function EmptyEvents({
-  onAdd,
-}) {
+function EmptyEvents({ onAdd }) {
   return (
     <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-10 text-center">
 
@@ -2073,7 +2754,10 @@ function EventCard({
 }) {
   const color =
     getColorClasses(
-      event.color
+      event.color ||
+        getCategoryColor(
+          event.category
+        )
     );
 
   const status =
@@ -2095,7 +2779,9 @@ function EventCard({
             >
               <CalendarDays
                 size={17}
-                className={color.text}
+                className={
+                  color.text
+                }
               />
             </div>
 
@@ -2127,9 +2813,7 @@ function EventCard({
 
                 {event.time && (
                   <span className="flex items-center gap-1.5">
-                    <Clock
-                      size={12}
-                    />
+                    <Clock size={12} />
                     {formatTime(
                       event.time
                     )}
@@ -2140,9 +2824,7 @@ function EventCard({
                   event.repeat !==
                     "none" && (
                     <span className="flex items-center gap-1.5">
-                      <Repeat
-                        size={12}
-                      />
+                      <Repeat size={12} />
                       {
                         event.repeat
                       }
@@ -2153,9 +2835,7 @@ function EventCard({
                   event.reminder !==
                     "none" && (
                     <span className="flex items-center gap-1.5">
-                      <Bell
-                        size={12}
-                      />
+                      <Bell size={12} />
                       {
                         event.reminder
                       }
@@ -2182,9 +2862,7 @@ function EventCard({
               onClick={onMaps}
               className="mt-3 flex items-center gap-1.5 text-xs text-white/30 transition hover:text-white"
             >
-              <MapPin
-                size={12}
-              />
+              <MapPin size={12} />
 
               <span>
                 {event.location}
@@ -2263,9 +2941,7 @@ function EventCard({
             className="rounded-xl p-2 text-white/30 transition hover:bg-white/10 hover:text-white"
             title="Edit"
           >
-            <Pencil
-              size={15}
-            />
+            <Pencil size={15} />
           </button>
 
           <button
@@ -2275,9 +2951,7 @@ function EventCard({
             className="rounded-xl p-2 text-white/30 transition hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
             title="Delete"
           >
-            <Trash2
-              size={15}
-            />
+            <Trash2 size={15} />
           </button>
 
         </div>
@@ -2303,9 +2977,7 @@ function EventModal({
   return (
     <div
       className="fixed inset-0 z-[100] flex items-end justify-center bg-black/75 p-0 backdrop-blur-md sm:items-center sm:p-4"
-      onMouseDown={(
-        event
-      ) => {
+      onMouseDown={(event) => {
         if (
           event.target ===
             event.currentTarget &&
@@ -2389,7 +3061,7 @@ function EventModal({
 
             </div>
 
-            {/* DATE TIME */}
+            {/* DATE + TIME */}
 
             <div className="grid gap-4 sm:grid-cols-2">
 
@@ -2403,9 +3075,7 @@ function EventModal({
                   type="date"
                   name="date"
                   value={form.date}
-                  onChange={
-                    onChange
-                  }
+                  onChange={onChange}
                   required
                   disabled={saving}
                   className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-4 py-3 text-sm text-white outline-none focus:border-white/20 disabled:opacity-50"
@@ -2423,9 +3093,7 @@ function EventModal({
                   type="time"
                   name="time"
                   value={form.time}
-                  onChange={
-                    onChange
-                  }
+                  onChange={onChange}
                   disabled={saving}
                   className="w-full rounded-2xl border border-white/10 bg-white/[0.045] px-4 py-3 text-sm text-white outline-none focus:border-white/20 disabled:opacity-50"
                 />
@@ -2447,9 +3115,7 @@ function EventModal({
                 value={
                   form.category
                 }
-                onChange={
-                  onChange
-                }
+                onChange={onChange}
                 disabled={saving}
                 className="w-full rounded-2xl border border-white/10 bg-[#181818] px-4 py-3 text-sm text-white outline-none"
               >
@@ -2488,23 +3154,38 @@ function EventModal({
                 Event Color
               </label>
 
-              <div className="flex gap-3">
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
 
                 {[
                   [
                     "blue",
                     "Blue",
-                    "bg-blue-400",
+                    "bg-blue-500",
                   ],
                   [
                     "green",
                     "Green",
-                    "bg-green-400",
+                    "bg-emerald-500",
                   ],
                   [
                     "purple",
                     "Purple",
-                    "bg-purple-400",
+                    "bg-purple-500",
+                  ],
+                  [
+                    "orange",
+                    "Orange",
+                    "bg-orange-500",
+                  ],
+                  [
+                    "pink",
+                    "Pink",
+                    "bg-pink-500",
+                  ],
+                  [
+                    "red",
+                    "Red",
+                    "bg-red-500",
                   ],
                 ].map(
                   ([
@@ -2513,9 +3194,7 @@ function EventModal({
                     dot,
                   ]) => (
                     <button
-                      key={
-                        value
-                      }
+                      key={value}
                       type="button"
                       onClick={() =>
                         onChange({
@@ -2525,7 +3204,7 @@ function EventModal({
                           },
                         })
                       }
-                      className={`flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-3 text-xs transition ${
+                      className={`flex flex-col items-center justify-center gap-1.5 rounded-xl border px-2 py-2.5 text-[9px] transition ${
                         form.color ===
                         value
                           ? "border-white/30 bg-white/10 text-white"
@@ -2555,10 +3234,10 @@ function EventModal({
 
               <select
                 name="repeat"
-                value={form.repeat}
-                onChange={
-                  onChange
+                value={
+                  form.repeat
                 }
+                onChange={onChange}
                 disabled={saving}
                 className="w-full rounded-2xl border border-white/10 bg-[#181818] px-4 py-3 text-sm text-white outline-none"
               >
@@ -2598,9 +3277,7 @@ function EventModal({
                 value={
                   form.reminder
                 }
-                onChange={
-                  onChange
-                }
+                onChange={onChange}
                 disabled={saving}
                 className="w-full rounded-2xl border border-white/10 bg-[#181818] px-4 py-3 text-sm text-white outline-none"
               >
@@ -2629,6 +3306,14 @@ function EventModal({
                 </option>
               </select>
 
+              {form.reminder !==
+                "none" &&
+                !form.time && (
+                  <p className="mt-2 text-[10px] text-orange-300/70">
+                    Select an event time to enable this reminder.
+                  </p>
+                )}
+
             </div>
 
             {/* STATUS */}
@@ -2641,10 +3326,10 @@ function EventModal({
 
               <select
                 name="status"
-                value={form.status}
-                onChange={
-                  onChange
+                value={
+                  form.status
                 }
+                onChange={onChange}
                 disabled={saving}
                 className="w-full rounded-2xl border border-white/10 bg-[#181818] px-4 py-3 text-sm text-white outline-none"
               >
@@ -2684,9 +3369,7 @@ function EventModal({
                   value={
                     form.location
                   }
-                  onChange={
-                    onChange
-                  }
+                  onChange={onChange}
                   placeholder="e.g. Kandy Gym"
                   maxLength={150}
                   disabled={saving}
@@ -2710,9 +3393,7 @@ function EventModal({
                 value={
                   form.description
                 }
-                onChange={
-                  onChange
-                }
+                onChange={onChange}
                 placeholder="Add some details..."
                 rows={4}
                 maxLength={500}
